@@ -263,6 +263,38 @@ public class AdbLinkController(
     }
 
     /**
+     * Работа с evidence Recovery — отдельной гранью, а не россыпью методов.
+     *
+     * Их две, они всегда идут парой и всегда про один и тот же файл; держать
+     * их рядом честнее, чем вперемешку с файловыми операциями, к которым они
+     * относятся только способом чтения.
+     */
+    public val recovery: RecoveryActions = RecoveryActions()
+
+    /** Снятие базы и чтение вердикта. */
+    public inner class RecoveryActions internal constructor() {
+        /**
+         * Снимает базу журнала Recovery — **до** установки.
+         *
+         * Без неё вердикт объявить будет нельзя: успех прошлой установки,
+         * оставшийся в том же файле, выглядел бы сегодняшним (`03` §6,
+         * инвариант 10).
+         */
+        public fun captureBaseline() {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.captureRecoveryBaseline(live)
+        }
+
+        /** Читает журнал Recovery и объявляет вердикт, если его разрешает база. */
+        public fun readVerdict() {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.readRecoveryVerdict(live)
+        }
+    }
+
+    /**
      * Пишет на устройство файл заданного размера из содержимого, порождённого
      * приложением.
      *

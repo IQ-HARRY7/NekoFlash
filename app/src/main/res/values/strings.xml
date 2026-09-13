@@ -237,4 +237,10 @@
     <string name="fastboot_plan_step_stopped">✗ %1$s — the plan stopped here</string>
     <string name="fastboot_plan_step_skipped">· %1$s — never sent</string>
     <string name="fastboot_destructive_flash_and_reboot">Flash the buffer and reboot</string>
+    <string name="recovery_verdict_success">Recovery confirmed the install. %1$s</string>
+    <string name="recovery_verdict_failed">Recovery reported an install error. %1$s</string>
+    <string name="recovery_verdict_unknown">The install outcome is unknown. %1$s</string>
+    <string name="recovery_verdict_evidence">Basis: %1$s</string>
+    <string name="recovery_baseline">Capture the Recovery log baseline</string>
+    <string name="recovery_verdict_read">Read the Recovery verdict</string>
 </resources>

@@ -201,6 +201,8 @@ private fun fileActions(link: AdbLinkController) = FileActions(
     onDescribe = link::describeFile,
     onRead = link::readFile,
     onWrite = link::writeFile,
+    onRecoveryBaseline = link.recovery::captureBaseline,
+    onRecoveryVerdict = link.recovery::readVerdict,
 )
 
 private fun terminalActions(link: AdbLinkController) = TerminalActions(

@@ -14,6 +14,7 @@ import androidx.compose.ui.res.stringResource
 import io.github.ncorror.nekoflash.R
 import io.github.ncorror.nekoflash.adb.AdbCommandState
 import io.github.ncorror.nekoflash.adb.AdbFileState
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryVerdict
 import io.github.ncorror.nekoflash.adb.AdbForwardController
 import io.github.ncorror.nekoflash.adb.AdbForwardEntry
 import io.github.ncorror.nekoflash.adb.AdbForwardState
@@ -144,6 +145,10 @@ data class FileActions(
     val onRead: (String) -> Unit = {},
     /** Записать файл заданного размера в байтах. */
     val onWrite: (String, Long) -> Unit = { _, _ -> },
+    /** Снять базу журнала Recovery — до установки. Путь фиксирован. */
+    val onRecoveryBaseline: () -> Unit = {},
+    /** Прочитать журнал Recovery и объявить вердикт, если его разрешает база. */
+    val onRecoveryVerdict: () -> Unit = {},
 )
 
 /**
@@ -190,6 +195,16 @@ private fun FilesSection(files: AdbFileState, actions: FileActions) {
     ) {
         Text(stringResource(R.string.files_write_small))
     }
+    // Две кнопки Recovery не берут путь из поля: журнал текущей сессии один, и
+    // дать выбрать другой значило бы позволить снять базу с файла, который
+    // продолжением не бывает по определению.
+    Button(onClick = actions.onRecoveryBaseline, enabled = idle) {
+        Text(stringResource(R.string.recovery_baseline))
+    }
+    Button(onClick = actions.onRecoveryVerdict, enabled = idle) {
+        Text(stringResource(R.string.recovery_verdict_read))
+    }
+
     Button(
         onClick = { actions.onWrite(path.value, LARGE_WRITE_BYTES) },
         enabled = idle && path.value.isNotBlank(),
@@ -219,6 +234,28 @@ private fun fileStateText(files: AdbFileState): String = when (files) {
     is AdbFileState.WriteFailed -> writeFailedText(files)
     is AdbFileState.Failed -> stringResource(R.string.files_failed, files.reason)
     is AdbFileState.Described -> describedText(files)
+    is AdbFileState.Verdict -> verdictText(files)
+}
+
+/**
+ * Вердикт Recovery словами.
+ *
+ * `UNKNOWN` показывается как полноценный исход с причиной, а не как пустое
+ * место: «нет записи» — это не успех и не провал, и подменять его одним из них
+ * значило бы придумать вердикт (`03` §3).
+ */
+@Composable
+private fun verdictText(state: AdbFileState.Verdict): String {
+    val head = stringResource(
+        when (state.verdict) {
+            AdbRecoveryVerdict.SUCCESS -> R.string.recovery_verdict_success
+            AdbRecoveryVerdict.FAILED -> R.string.recovery_verdict_failed
+            AdbRecoveryVerdict.UNKNOWN -> R.string.recovery_verdict_unknown
+        },
+        state.detail,
+    )
+    return state.evidence?.let { line -> head + "\n" + stringResource(R.string.recovery_verdict_evidence, line) }
+        ?: head
 }
 
 /**

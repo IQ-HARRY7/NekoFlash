@@ -240,4 +240,10 @@
     <string name="fastboot_plan_step_stopped">✗ %1$s — здесь план остановился</string>
     <string name="fastboot_plan_step_skipped">· %1$s — не отправлялось</string>
     <string name="fastboot_destructive_flash_and_reboot">Записать буфер и перезагрузить</string>
+    <string name="recovery_verdict_success">Recovery подтвердило установку. %1$s</string>
+    <string name="recovery_verdict_failed">Recovery сообщило об ошибке установки. %1$s</string>
+    <string name="recovery_verdict_unknown">Исход установки неизвестен. %1$s</string>
+    <string name="recovery_verdict_evidence">Основание: %1$s</string>
+    <string name="recovery_baseline">Снять базу журнала Recovery</string>
+    <string name="recovery_verdict_read">Прочитать вердикт Recovery</string>
 </resources>

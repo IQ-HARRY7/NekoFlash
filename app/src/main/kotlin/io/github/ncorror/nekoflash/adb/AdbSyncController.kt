@@ -8,6 +8,12 @@ import io.github.ncorror.nekoflash.protocol.adb.AdbSyncFailure
 import io.github.ncorror.nekoflash.protocol.adb.AdbSyncOutcome
 import io.github.ncorror.nekoflash.protocol.adb.AdbSyncSendOutcome
 import io.github.ncorror.nekoflash.protocol.adb.AdbSyncSession
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryBaseline
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryCorrelator
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryInstall
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryLog
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryResult
+import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryVerdict
 import io.github.ncorror.nekoflash.protocol.adb.AdbSyncStat
 import java.security.MessageDigest
 import java.util.concurrent.Executor
@@ -34,6 +40,20 @@ public sealed interface AdbFileState {
      * доказывает, что чтение побайтно верное, а не просто «что-то пришло».
      */
     public data class Read(val path: String, val bytes: Long, val sha256: String) : AdbFileState
+
+    /**
+     * Исход установки по словам Recovery.
+     *
+     * Отдельное состояние, а не строка в `Read`: вердикт — это не содержимое
+     * файла, а вывод из него, и путать их значило бы показывать оператору
+     * оценку там, где он просил данные.
+     */
+    public data class Verdict(
+        val verdict: AdbRecoveryVerdict,
+        val detail: String,
+        val evidence: String?,
+        val baselineTaken: Boolean,
+    ) : AdbFileState
 
     /**
      * Файл записан, и устройство это подтвердило.
@@ -84,6 +104,15 @@ public class AdbSyncController(
     @Volatile
     private var running = false
 
+    /**
+     * База журнала Recovery этой сессии.
+     *
+     * Живёт в памяти владельца и переживанию перезапуска не подлежит: `03` §6
+     * требует persistent evidence, и это работа хранилища из Phase 8, а не
+     * тихая подмена здесь.
+     */
+    private var baseline: AdbRecoveryBaseline? = null
+
     /** Состояние последней операции. */
     public val state: StateFlow<AdbFileState> = mutableState.asStateFlow()
 
@@ -122,6 +151,73 @@ public class AdbSyncController(
                 is AdbSyncOutcome.Failed -> failed(target, outcome)
             }
         }
+    }
+
+    /**
+     * Снимает базу журнала Recovery — **до** Sideload.
+     *
+     * База это длина и отпечаток начала, а не сам журнал. Без неё вердикт
+     * после установки объявить будет нельзя: успех прошлой установки,
+     * оставшийся в том же файле, выглядел бы сегодняшним (`03` §6, инвариант
+     * 10).
+     */
+    public fun captureRecoveryBaseline(connection: AdbConnection) {
+        start(connection, AdbRecoveryInstall.PRIMARY_PATH) { session, target ->
+            when (val outcome = readText(session, target)) {
+                is TextOutcome.Read -> {
+                    baseline = AdbRecoveryCorrelator.capture(AdbRecoveryLog(target, outcome.text))
+                    AdbFileState.Verdict(
+                        verdict = AdbRecoveryVerdict.UNKNOWN,
+                        detail = "база снята: символов ${baseline?.prefixLength ?: 0}",
+                        evidence = null,
+                        baselineTaken = true,
+                    )
+                }
+
+                is TextOutcome.Failed -> failed(target, outcome.outcome)
+            }
+        }
+    }
+
+    /**
+     * Читает журнал Recovery и объявляет вердикт — **если** его разрешает база.
+     *
+     * Сам журнал никуда не сохраняется и в диагностику не выгружается: наружу
+     * идут вердикт и одна строка доказательства. Журнал Recovery — это чужой
+     * файл целиком, и выгружать его в отчёт по умолчанию незачем.
+     */
+    public fun readRecoveryVerdict(connection: AdbConnection) {
+        start(connection, AdbRecoveryInstall.PRIMARY_PATH) { session, target ->
+            when (val outcome = readText(session, target)) {
+                is TextOutcome.Read -> verdictOf(AdbRecoveryLog(target, outcome.text))
+                is TextOutcome.Failed -> failed(target, outcome.outcome)
+            }
+        }
+    }
+
+    private fun verdictOf(log: AdbRecoveryLog): AdbFileState {
+        val result: AdbRecoveryResult = AdbRecoveryCorrelator.verdict(listOf(log), baseline)
+        // Значение вердикта и одна строка доказательства — всё, что уходит
+        // наружу. Текст журнала остаётся на устройстве.
+        return AdbFileState.Verdict(
+            verdict = result.verdict,
+            detail = result.detail,
+            evidence = result.evidence,
+            baselineTaken = baseline != null,
+        )
+    }
+
+    private fun readText(session: AdbSyncSession, path: String): TextOutcome {
+        val builder = StringBuilder()
+        return when (val outcome = session.receive(path) { chunk -> builder.append(String(chunk, Charsets.UTF_8)) }) {
+            is AdbSyncOutcome.Done -> TextOutcome.Read(builder.toString())
+            is AdbSyncOutcome.Failed -> TextOutcome.Failed(outcome)
+        }
+    }
+
+    private sealed interface TextOutcome {
+        data class Read(val text: String) : TextOutcome
+        data class Failed(val outcome: AdbSyncOutcome.Failed) : TextOutcome
     }
 
     /**
