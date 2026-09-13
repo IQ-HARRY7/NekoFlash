@@ -62,7 +62,8 @@ Legacy и A2 заморожены как **reference/evidence**. Ни один �
 - Phase 2: **COMPLETE / PASS** — USB + Target/Session vertical slice закрыт аппаратным гейтом.
 - Phase 3: **COMPLETE** — ADB foundation, `shell,v2`, legacy fallback и interactive shell подтверждены аппаратными прогонами.
 - Phase 4: **COMPLETE** — ADB professional services; незапертых пунктов нет, остальное ждёт Phase 8 по решению (`07` §6.66).
-- Current work: **Phase 5 — Fastboot generic engine**.
+- Phase 5: **COMPLETE** — Fastboot generic engine; незапертых пунктов нет, два оставшихся ждут Phase 6 и Phase 8 по решению (`09`).
+- Current work: **Phase 6 — Fastboot DATA IN + modern partition workflows**.
 - Статус каждого пункта — только в чеклисте `09_IMPLEMENTATION_ROADMAP_RU.md`. Здесь называются фазы: пересказ пунктов уже расходился с действительностью и устаревал первым.
 - Termux: Git/worktree/edit/commit/push.
 - GitHub Actions: authoritative build/test/lint/CI environment.
