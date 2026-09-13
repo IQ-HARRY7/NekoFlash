@@ -234,4 +234,10 @@
     <string name="fastboot_fetch_partial">%1$s прочитан НЕ целиком: %2$d байт. Выдавать это за раздел нельзя — недостающий кусок снаружи не отличить от нулей внутри.</string>
     <string name="fastboot_fetch_sha256">SHA-256 прочитанного: %1$s</string>
     <string name="fastboot_partitions_summary">Разделов названо: %1$d, подтверждено существенным полем: %2$d. Подтверждает размер, тип или признак логического; один только has-slot доказательством не является — устройства отвечают на него и про имена, которых у них нет.</string>
+    <string name="fastboot_plan_completed">План выполнен целиком: шагов %1$d из %2$d</string>
+    <string name="fastboot_plan_stopped">План остановлен: выполнено %1$d шагов из %2$d. Устройство осталось между «до» и «после» — часть сделана, остальное нет.</string>
+    <string name="fastboot_plan_step_done">✓ %1$s</string>
+    <string name="fastboot_plan_step_stopped">✗ %1$s — здесь план остановился</string>
+    <string name="fastboot_plan_step_skipped">· %1$s — не отправлялось</string>
+    <string name="fastboot_destructive_flash_and_reboot">Записать буфер и перезагрузить</string>
 </resources>

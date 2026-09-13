@@ -231,4 +231,10 @@
     <string name="fastboot_fetch_partial">%1$s was NOT read in full: %2$d bytes. This cannot be passed off as the partition — a missing piece is indistinguishable from zeros inside it.</string>
     <string name="fastboot_fetch_sha256">SHA-256 of what was read: %1$s</string>
     <string name="fastboot_partitions_summary">Partitions named: %1$d, confirmed by a substantive field: %2$d. Size, type or the logical flag confirm one; has-slot alone does not — devices answer it for names they do not have.</string>
+    <string name="fastboot_plan_completed">The plan ran in full: %1$d of %2$d steps</string>
+    <string name="fastboot_plan_stopped">The plan stopped: %1$d of %2$d steps done. The device is left between "before" and "after" — part of it happened, the rest did not.</string>
+    <string name="fastboot_plan_step_done">✓ %1$s</string>
+    <string name="fastboot_plan_step_stopped">✗ %1$s — the plan stopped here</string>
+    <string name="fastboot_plan_step_skipped">· %1$s — never sent</string>
+    <string name="fastboot_destructive_flash_and_reboot">Flash the buffer and reboot</string>
 </resources>

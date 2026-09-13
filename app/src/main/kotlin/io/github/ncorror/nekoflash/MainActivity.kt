@@ -182,7 +182,7 @@ private fun fastbootPanel(
     },
     onDisconnect = link::disconnect,
     // Тот же вход, что и у консоли: второго пути к полосе нет по построению.
-    onCommand = link::runCommand,
+    onPlan = link::runPlan,
 )
 
 private fun fastbootConsolePanel(

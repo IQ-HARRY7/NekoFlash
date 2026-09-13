@@ -104,6 +104,21 @@ public sealed interface FastbootConsoleState {
         val lane: FastbootLaneState,
     ) : FastbootConsoleState
 
+    /**
+     * Исход плана — последовательности команд как одного действия.
+     *
+     * Хранится **и** сделанное, **и** место остановки: устройство после обрыва
+     * оказывается между «до» и «после», и показать это как неудачу целиком
+     * значило бы скрыть сделанное, а как успех — скрыть несделанное.
+     */
+    public data class Planned(
+        val commands: List<String>,
+        val applied: Int,
+        val stoppedAt: Int?,
+        val detail: String,
+        val lane: FastbootLaneState,
+    ) : FastbootConsoleState
+
     /** Ответ на `getvar:all` — разобранный список переменных. */
     public data class Variables(
         val snapshot: FastbootVariableSnapshot,

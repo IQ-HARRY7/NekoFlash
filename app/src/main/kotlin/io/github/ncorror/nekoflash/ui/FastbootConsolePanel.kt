@@ -170,7 +170,44 @@ private fun FastbootConsoleOutcome(state: FastbootConsoleState) {
         is FastbootConsoleState.Mutated -> FastbootMutationLines(state)
 
         is FastbootConsoleState.Fetched -> FastbootFetchLines(state)
+
+        is FastbootConsoleState.Planned -> FastbootPlanLines(state)
     }
+}
+
+/**
+ * Исход плана.
+ *
+ * Главное — где он остановился, а не сколько шагов прошло: устройство после
+ * обрыва между «до» и «после», и по одному счётчику этого не увидеть.
+ */
+@Composable
+private fun FastbootPlanLines(state: FastbootConsoleState.Planned) {
+    Text(
+        text = stringResource(
+            if (state.stoppedAt == null) R.string.fastboot_plan_completed else R.string.fastboot_plan_stopped,
+            state.applied,
+            state.commands.size,
+        ),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    state.commands.forEachIndexed { index, command ->
+        Text(
+            text = stringResource(
+                when {
+                    state.stoppedAt == null || index < state.stoppedAt -> R.string.fastboot_plan_step_done
+                    index == state.stoppedAt -> R.string.fastboot_plan_step_stopped
+                    else -> R.string.fastboot_plan_step_skipped
+                },
+                command,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (state.detail.isNotBlank()) {
+        Text(text = state.detail, style = MaterialTheme.typography.bodySmall)
+    }
+    FastbootLaneLine(state.lane.name)
 }
 
 /**

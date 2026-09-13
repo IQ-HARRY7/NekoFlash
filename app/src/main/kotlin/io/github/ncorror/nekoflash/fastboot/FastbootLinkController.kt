@@ -23,6 +23,8 @@ import io.github.ncorror.nekoflash.protocol.fastboot.FastbootModeProbe
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutation
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationClass
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationOutcome
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootPlan
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootPlanOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootVariable
 import io.github.ncorror.nekoflash.usb.api.UsbClaimResult
 import io.github.ncorror.nekoflash.usb.api.UsbTransportHandle
@@ -158,6 +160,54 @@ public class FastbootLinkController(
                 lane = lane.state,
             )
         }
+    }
+
+    /**
+     * Выполняет план — последовательность команд как одно действие.
+     *
+     * Второго пути к полосе не заводит: каждый шаг уходит тем же
+     * `FastbootMutation`, что и набранная руками команда. План не добавляет
+     * возможностей — он показывает оператору весь список **до** нажатия и
+     * останавливается на первом непринятом шаге, чтобы не складывать
+     * неизвестность с неизвестностью.
+     */
+    public fun runPlan(commands: List<String>) {
+        busy("fastboot_plan", commands.joinToString(" ; ")) { lane, _ ->
+            val outcome = FastbootPlan(commands).run(FastbootMutation(lane, FastbootGetVar(lane)))
+            planned(commands, outcome, lane.state)
+        }
+    }
+
+    private fun planned(
+        commands: List<String>,
+        outcome: FastbootPlanOutcome,
+        lane: FastbootLaneState,
+    ): FastbootConsoleState = when (outcome) {
+        is FastbootPlanOutcome.Completed -> FastbootConsoleState.Planned(
+            commands = commands,
+            applied = outcome.applied.size,
+            stoppedAt = null,
+            detail = "",
+            lane = lane,
+        )
+
+        is FastbootPlanOutcome.Stopped -> FastbootConsoleState.Planned(
+            commands = commands,
+            applied = outcome.applied.size,
+            stoppedAt = outcome.index,
+            detail = "${outcome.command}: ${describe(outcome.outcome)}",
+            lane = lane,
+        )
+    }
+
+    /** Короткое слово об исходе шага — то же, что пишется в `claim`. */
+    private fun describe(outcome: FastbootMutationOutcome): String = when (outcome) {
+        is FastbootMutationOutcome.Applied -> "выполнено"
+        is FastbootMutationOutcome.Refused -> "устройство отказало: ${outcome.detail}"
+        is FastbootMutationOutcome.Unconfirmed -> "OKAY без подтверждения: ${outcome.detail}"
+        is FastbootMutationOutcome.Departed -> "устройство ушло, не ответив"
+        is FastbootMutationOutcome.Unknown -> "неизвестно: ${outcome.detail}"
+        is FastbootMutationOutcome.NotStarted -> "не отправлено: ${outcome.detail}"
     }
 
     /** Спрашивает одну переменную по имени. */
@@ -394,6 +444,18 @@ public class FastbootLinkController(
                 "bytes" to state.bytes.toString(),
                 "sha256" to state.sha256,
                 "complete" to state.complete.toString(),
+                "detail" to state.detail,
+                "lane" to state.lane.name,
+            )
+
+            is FastbootConsoleState.Planned -> mapOf(
+                "commands" to state.commands.joinToString(" ; "),
+                "steps" to state.commands.size.toString(),
+                "applied" to state.applied.toString(),
+                // Место остановки пишется отдельно от числа сделанного: по
+                // одному только счётчику не отличить «всё прошло» от «первый шаг
+                // прошёл, а второго не было».
+                "stoppedAt" to (state.stoppedAt?.toString() ?: "none"),
                 "detail" to state.detail,
                 "lane" to state.lane.name,
             )

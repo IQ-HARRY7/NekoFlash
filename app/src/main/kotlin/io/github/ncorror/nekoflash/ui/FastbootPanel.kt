@@ -21,7 +21,7 @@ data class FastbootPanel(
     val onProbe: () -> Unit = {},
     val onDisconnect: () -> Unit = {},
     /** Тот же вход, что и у консоли: разрушающая кнопка своего обмена не заводит. */
-    val onCommand: (String) -> Unit = {},
+    val onPlan: (List<String>) -> Unit = {},
 )
 
 /**
@@ -63,7 +63,7 @@ fun FastbootLinkSection(
                 // Разрушающие команды живут здесь, а не в консоли, потому что
                 // форму подтверждения задаёт замок **этой** generation, и он
                 // известен ровно тут.
-                FastbootDestructiveSection(lock = state.lock, onCommand = fastboot.onCommand)
+                FastbootDestructiveSection(lock = state.lock, onPlan = fastboot.onPlan)
             }
 
             is FastbootLinkState.Failed -> {

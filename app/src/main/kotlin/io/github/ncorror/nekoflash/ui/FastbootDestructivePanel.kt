@@ -21,6 +21,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.ncorror.nekoflash.R
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootCommands
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootPlan
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootPlans
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockStatus
 
 /**
@@ -51,11 +53,11 @@ import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockStatus
 @Composable
 fun FastbootDestructiveSection(
     lock: FastbootLockStatus,
-    onCommand: (String) -> Unit,
+    onPlan: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var partition by remember { mutableStateOf("") }
-    var pending by remember { mutableStateOf<String?>(null) }
+    var pending by remember { mutableStateOf<FastbootPlan?>(null) }
 
     Column(
         modifier = modifier.fillMaxWidth().padding(top = 8.dp),
@@ -75,24 +77,29 @@ fun FastbootDestructiveSection(
         )
 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { pending = FastbootCommands.erase(partition) }) {
+            Button(onClick = { pending = FastbootPlan(listOf(FastbootCommands.erase(partition))) }) {
                 Text(stringResource(R.string.fastboot_destructive_erase))
             }
-            Button(onClick = { pending = FastbootCommands.format(partition) }) {
+            Button(onClick = { pending = FastbootPlan(listOf(FastbootCommands.format(partition))) }) {
                 Text(stringResource(R.string.fastboot_destructive_format))
             }
-            Button(onClick = { pending = FastbootCommands.flash(partition) }) {
+            Button(onClick = { pending = FastbootPlan(listOf(FastbootCommands.flash(partition))) }) {
                 Text(stringResource(R.string.fastboot_destructive_flash))
+            }
+            // План из двух шагов — тот же путь, только список длиннее, и он
+            // виден целиком до нажатия.
+            Button(onClick = { pending = FastbootPlans.flashBuffer(partition) }) {
+                Text(stringResource(R.string.fastboot_destructive_flash_and_reboot))
             }
         }
 
-        pending?.let { command ->
+        pending?.let { plan ->
             FastbootConfirmation(
-                command = command,
+                plan = plan,
                 lock = lock,
                 onConfirm = {
                     pending = null
-                    onCommand(command)
+                    onPlan(plan.commands)
                 },
                 onCancel = { pending = null },
             )
@@ -115,15 +122,18 @@ fun FastbootDestructiveSection(
  */
 @Composable
 private fun FastbootConfirmation(
-    command: String,
+    plan: FastbootPlan,
     lock: FastbootLockStatus,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    var typed by remember(command) { mutableStateOf("") }
+    var typed by remember(plan.commands) { mutableStateOf("") }
 
+    // Список показывается целиком до нажатия: `01` §3 требует содержательного
+    // preflight, и предпросмотр плана — это он и есть. Узнавать шаги по ходу
+    // оператор не должен.
     Text(
-        text = stringResource(R.string.fastboot_destructive_warning, command),
+        text = stringResource(R.string.fastboot_destructive_warning, plan.commands.joinToString(" ; ")),
         style = MaterialTheme.typography.bodyMedium,
     )
     Text(
