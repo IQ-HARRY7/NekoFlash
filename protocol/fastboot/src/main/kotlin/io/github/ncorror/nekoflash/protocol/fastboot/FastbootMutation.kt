@@ -31,6 +31,22 @@ public enum class FastbootMutationClass {
 
     /** Уводит устройство из текущей роли: ответа может не быть вовсе, и это норма. */
     REBOOT,
+
+    /**
+     * Меняет состояние замка загрузчика — и вместе с ним, как правило, стирает
+     * устройство целиком.
+     *
+     * Отдельный класс не ради строгости: оборванная смена замка оставляет
+     * неизвестным **и** замок, **и** пользовательские данные, то есть это
+     * худший `Unknown` из всех, что бывают у Fastboot. Сложить его с записью в
+     * раздел значило бы сказать оператору меньше, чем мы знаем.
+     *
+     * Сюда попадает только стандартное семейство `flashing` из AOSP, и только
+     * его меняющие члены. Ни Legacy, ни A2 этих команд не знают вовсе — Legacy
+     * умеет `oem unlock` от Xiaomi, и всё, — так что это наше решение, а не
+     * перенос, и помечено как наше.
+     */
+    LOCK,
 }
 
 /** Чем кончилась команда, способная изменить устройство. */
@@ -156,7 +172,7 @@ public class FastbootMutation(
      */
     public fun run(
         command: String,
-        inactivityMillis: Long = FastbootLane.DEFAULT_INACTIVITY_MS,
+        inactivityMillis: Long = patienceFor(command),
     ): FastbootMutationOutcome {
         val mutation = classify(command)
         return when (val exchange = lane.run(command, inactivityMillis)) {
@@ -263,19 +279,73 @@ public class FastbootMutation(
          * ничего не меняет»: это значит, что мы не знаем, что она меняет.
          * Отказывать по этой причине нельзя — в поле консоли набирают в том числе
          * `oem`-команды, которых не знает никто, кроме конкретного загрузчика.
+         *
+         * **`oem` остаётся неклассифицированным намеренно.** Что делает
+         * `oem <что-то>`, знает вендор, и на разных устройствах одно и то же
+         * слово значит разное. Приписать классу догадку значило бы выдать наше
+         * предположение за знание — ровно то, чего не делает и Legacy, где
+         * `oem`-команды уходят обычным `sendCommand` без разбора смысла.
+         *
+         * Перечислены **только** меняющие члены семейства `flashing`.
+         * `flashing get_unlock_ability` сюда не входит: это чтение, оно ничего
+         * не меняет, и назвать его сменой замка было бы неправдой.
          */
         public fun classify(command: String): FastbootMutationClass {
             val clean = command.trim().lowercase()
             return when {
                 PARTITION_PREFIXES.any { clean.startsWith(it) } -> FastbootMutationClass.PARTITION
                 SLOT_PREFIXES.any { clean.startsWith(it) } -> FastbootMutationClass.SLOT
+                clean in LOCK_COMMANDS -> FastbootMutationClass.LOCK
                 clean == BOOT -> FastbootMutationClass.BOOT
                 clean == REBOOT || clean.startsWith("$REBOOT-") -> FastbootMutationClass.REBOOT
                 else -> FastbootMutationClass.NONE
             }
         }
 
+        /**
+         * Терпение для команд, про которые архив прямо говорит «долго».
+         *
+         * Legacy даёт `oem get_token` 30 секунд против обычных пяти
+         * (`FastbootProtocol`, `elapsedMs >= 30_000L`). Это **терпение, а не
+         * разрешение**: ошибка в эту сторону — подождать дольше, и ни при каких
+         * условиях не отказать. Бюджет считается по бездействию, поэтому
+         * болтливая команда с потоком `INFO` мёртвой не выглядит.
+         */
+        public const val VENDOR_INACTIVITY_MS: Long = 30_000L
+
+        /**
+         * Сколько ждать команду, если вызывающий не сказал иначе.
+         *
+         * Различаются здесь не права, а ожидания: `oem` и `flashing` у
+         * вендоров медленные, и мерить их общей меркой значило бы объявлять
+         * мёртвым то, что просто думает.
+         */
+        public fun patienceFor(command: String): Long {
+            val clean = command.trim().lowercase()
+            return if (SLOW_PREFIXES.any { clean.startsWith(it) }) {
+                VENDOR_INACTIVITY_MS
+            } else {
+                FastbootLane.DEFAULT_INACTIVITY_MS
+            }
+        }
+
         private val PARTITION_PREFIXES = listOf("flash:", "erase:", "format:")
+        private val SLOW_PREFIXES = listOf("oem ", "oem:", "flashing ", "flashing:")
+
+        /**
+         * Меняющие члены семейства `flashing`, как их пишет AOSP.
+         *
+         * Список закрытый и короткий, потому что это **стандартные** команды с
+         * известным действием. Он ничего не разрешает и не запрещает: набрать
+         * можно что угодно, включая то, чего здесь нет, — он только называет
+         * класс состояния для отчёта.
+         */
+        private val LOCK_COMMANDS = setOf(
+            "flashing lock",
+            "flashing unlock",
+            "flashing lock_critical",
+            "flashing unlock_critical",
+        )
         private val SLOT_PREFIXES = listOf("set_active:", "set-active:")
         private const val BOOT = "boot"
         private const val REBOOT = "reboot"

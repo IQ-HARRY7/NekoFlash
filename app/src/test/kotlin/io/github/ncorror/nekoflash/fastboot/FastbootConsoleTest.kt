@@ -243,6 +243,62 @@ class FastbootConsoleTest {
     }
 
     /**
+     * Токен разблокировки не попадает в выгрузку — ни одним из трёх путей.
+     *
+     * Решение принято в §6.72 для `getvar:all`, где пишутся имена и счётчики,
+     * но не значения. Два пути его обходили, и это нашлось при подготовке
+     * гейта §6.78, а не после прогона: одиночное чтение переменной по имени и
+     * ответ произвольной команды — а `oem get_token` как раз отдаёт токен.
+     *
+     * Оператор при этом не теряет ничего: значение показывается на экране
+     * целиком. Скрыто оно только в архиве, который человек отдаёт кому-то ещё.
+     */
+    @Test
+    fun theUnlockTokenNeverReachesTheDiagnosticsBundle() {
+        val secret = "VQEBHgEQgHK4syxLQw4eZsMvvbcRywMEdmF5dQIEhNX7aQ"
+        val sink = InMemoryDiagnosticSink()
+        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAY$secret")), sink)
+
+        controller.readVariable("token")
+
+        val state = controller.console.value as FastbootConsoleState.Answered
+        assertEquals("на экране значение видно целиком", secret, state.payload)
+        assertTrue(
+            "в выгрузке его нет",
+            sink.snapshot().none { event -> event.fields.values.any { it.contains(secret) } },
+        )
+        assertTrue(
+            "но видно, что ответ был и какой длины",
+            sink.snapshot().last().fields["payload"]?.contains(secret.length.toString()) == true,
+        )
+    }
+
+    /** Тот же токен тем же путём, но спрошенный вендорской командой. */
+    @Test
+    fun theSameTokenIsHiddenWhenAVendorCommandAsksForIt() {
+        val secret = "AAAABBBBCCCCDDDD"
+        val sink = InMemoryDiagnosticSink()
+        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAY$secret")), sink)
+
+        controller.runCommand("oem get_token")
+
+        assertTrue(
+            sink.snapshot().none { event -> event.fields.values.any { it.contains(secret) } },
+        )
+    }
+
+    /** Обычный ответ при этом записывается как был: прячется не всё подряд. */
+    @Test
+    fun anOrdinaryAnswerIsStillJournalledAsItCame() {
+        val sink = InMemoryDiagnosticSink()
+        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAYvayu")), sink)
+
+        controller.readVariable("product")
+
+        assertEquals("vayu", sink.snapshot().last().fields["payload"])
+    }
+
+    /**
      * Загрузка доходит до устройства и её исход не приукрашивается.
      *
      * Проверяется главное поле — `untouched`: утверждать «ничего не

@@ -216,5 +216,83 @@ class FastbootMutationTest {
         assertFalse(FastbootMutation.classify("rebooting") == FastbootMutationClass.REBOOT)
     }
 
+    /**
+     * Смена замка названа своим классом, а чтение о замке — нет.
+     *
+     * `flashing get_unlock_ability` ничего не меняет, и назвать его сменой
+     * замка было бы неправдой. Ни Legacy, ни A2 семейства `flashing` не знают
+     * вовсе — Legacy умеет только `oem unlock` от Xiaomi, — так что это наше
+     * решение, помеченное как наше.
+     */
+    @Test
+    fun changingTheLockIsItsOwnClassButReadingAboutItIsNot() {
+        assertEquals(FastbootMutationClass.LOCK, FastbootMutation.classify("flashing unlock"))
+        assertEquals(FastbootMutationClass.LOCK, FastbootMutation.classify("FLASHING LOCK"))
+        assertEquals(FastbootMutationClass.LOCK, FastbootMutation.classify("flashing unlock_critical"))
+        assertEquals(FastbootMutationClass.NONE, FastbootMutation.classify("flashing get_unlock_ability"))
+    }
+
+    /**
+     * `oem` остаётся неклассифицированным намеренно.
+     *
+     * Что делает `oem <что-то>`, знает вендор, и на разных устройствах одно
+     * слово значит разное. `NONE` здесь означает «не знаем», а не «безопасна»;
+     * приписать классу догадку значило бы выдать предположение за знание.
+     */
+    @Test
+    fun anOemCommandIsDeliberatelyLeftUnclassified() {
+        assertEquals(FastbootMutationClass.NONE, FastbootMutation.classify("oem unlock"))
+        assertEquals(FastbootMutationClass.NONE, FastbootMutation.classify("oem get_token"))
+        assertEquals(FastbootMutationClass.NONE, FastbootMutation.classify("oem device-info"))
+    }
+
+    /**
+     * Оборванная смена замка — худшее неизвестное состояние, и класс это несёт.
+     *
+     * Неизвестен и замок, и пользовательские данные: смена замка обычно стирает
+     * устройство целиком.
+     */
+    @Test
+    fun anInterruptedLockChangeCarriesItsOwnClass() {
+        val lane = FastbootLane(FakeFastbootTransport().willBeSilent(100))
+
+        val outcome = mutation(lane).run("flashing unlock", inactivityMillis = 100)
+
+        assertEquals(FastbootMutationClass.LOCK, (outcome as FastbootMutationOutcome.Unknown).mutation)
+        assertEquals(FastbootLaneState.STALLED, lane.state)
+    }
+
+    /**
+     * Вендорские команды ждут дольше, и это терпение, а не разрешение.
+     *
+     * Legacy даёт `oem get_token` 30 секунд против обычных пяти, потому что
+     * вендорские команды думают долго. Мерить их общей меркой значило бы
+     * объявлять мёртвым то, что просто работает.
+     */
+    @Test
+    fun vendorCommandsAreWaitedForLongerThanOrdinaryOnes() {
+        assertEquals(FastbootMutation.VENDOR_INACTIVITY_MS, FastbootMutation.patienceFor("oem get_token"))
+        assertEquals(FastbootMutation.VENDOR_INACTIVITY_MS, FastbootMutation.patienceFor("  FLASHING unlock "))
+        assertEquals(FastbootLane.DEFAULT_INACTIVITY_MS, FastbootMutation.patienceFor("getvar:product"))
+        assertEquals(FastbootLane.DEFAULT_INACTIVITY_MS, FastbootMutation.patienceFor("erase:boot"))
+    }
+
+    /**
+     * Ответ вендорской команды приходит кусками `INFO`, и они доходят целиком.
+     *
+     * Legacy собирает токен разблокировки из нескольких фрагментов `INFO`
+     * (`extractUnlockTokenPart`), то есть одна строка — это часть ответа, а не
+     * ответ. Потерять хоть одну значило бы показать оператору обрывок.
+     */
+    @Test
+    fun theInfoFragmentsOfAVendorAnswerAllArrive() {
+        val transport = FakeFastbootTransport().willReply("INFOtoken: AAAA", "INFOBBBB", "OKAY")
+
+        val outcome = mutation(FastbootLane(transport)).run("oem get_token")
+
+        val applied = outcome as FastbootMutationOutcome.Applied
+        assertEquals(listOf("token: AAAA", "BBBB"), applied.info)
+    }
+
     private fun mutation(lane: FastbootLane) = FastbootMutation(lane, FastbootGetVar(lane))
 }

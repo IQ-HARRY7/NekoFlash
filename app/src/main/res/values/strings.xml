@@ -211,4 +211,6 @@
     <string name="fastboot_mutation_departed">%1$s → the device left without answering (%2$d ms). For a reboot that is expected, not a lost link.</string>
     <string name="fastboot_mutation_partition_unknown">What the partition now holds is unknown. It may have been left half-written, and its contents cannot be relied on.</string>
     <string name="fastboot_mutation_not_started">%1$s → the exchange never started: %2$s. The device never saw this command.</string>
+    <string name="fastboot_mutation_lock_refusal">A refusal is the device saying the lock is untouched. It is not proof: what is known is what the device said, not what it managed to do before refusing.</string>
+    <string name="fastboot_mutation_lock_unknown">The lock state is unknown, and so is the state of user data with it: changing the lock normally wipes the device. This is the worst unknown state Fastboot has.</string>
 </resources>

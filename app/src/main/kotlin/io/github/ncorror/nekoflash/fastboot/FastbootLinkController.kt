@@ -289,7 +289,7 @@ public class FastbootLinkController(
             is FastbootConsoleState.Answered -> mapOf(
                 "command" to state.command,
                 "reply" to state.reply.name,
-                "payload" to state.payload,
+                "payload" to journalled(state.command, state.payload),
                 "infoLines" to state.info.size.toString(),
                 "lane" to state.lane.name,
             )
@@ -365,7 +365,7 @@ public class FastbootLinkController(
             is FastbootMutationOutcome.Applied -> mapOf(
                 "claim" to "applied",
                 "reply" to "OKAY",
-                "payload" to outcome.payload,
+                "payload" to journalled(outcome.command, outcome.payload),
                 "infoLines" to outcome.info.size.toString(),
                 "confirmation" to (outcome.confirmation ?: "none"),
             )
@@ -403,6 +403,34 @@ public class FastbootLinkController(
             )
         }
     }
+
+    /**
+     * Значение ответа так, как оно попадёт в **выгрузку диагностики**.
+     *
+     * Токен разблокировки в журнал не пишется. Решение об этом было принято в
+     * §6.72 для `getvar:all` — там записываются имена и счётчики, но не
+     * значения, — и обходилось двумя путями, которые тогда не заметили:
+     * одиночное чтение переменной по имени и ответ произвольной команды. Оба
+     * закрыты здесь.
+     *
+     * **Оператор при этом не теряет ничего**: значение показывается на экране
+     * целиком, как он и просил. Скрыто оно только в архиве, который человек
+     * отдаёт кому-то ещё. Это решение о **нашем отчёте**, а не ограничение
+     * возможностей (`01` §3): команда уходит как набрана, ответ приходит
+     * целиком, прячется одна строка в файле, который мы же и составляем.
+     *
+     * Совпадение ищется по **вопросу**, а не по ответу: спросили про токен —
+     * значение не записываем. Это узкая заглушка на известный случай, а не
+     * общее правило. Общее — чьи ещё ответы нельзя выгружать — принадлежит
+     * `diagnostics privacy review` из Phase 11, и придумывать его на бегу
+     * значило бы дать ложную уверенность списком, который заведомо неполон.
+     */
+    private fun journalled(command: String, payload: String): String =
+        if (payload.isNotBlank() && SECRET_ANSWERS.any { command.contains(it, ignoreCase = true) }) {
+            "$HIDDEN, символов: ${payload.length}"
+        } else {
+            payload
+        }
 
     private fun mutationClassOf(outcome: FastbootMutationOutcome): FastbootMutationClass = when (outcome) {
         is FastbootMutationOutcome.Applied -> outcome.mutation
@@ -450,5 +478,10 @@ public class FastbootLinkController(
 
     private companion object {
         const val DIAGNOSTIC_CATEGORY = "fastboot"
+
+        /** Вопросы, ответ на которые в выгрузку не идёт. Совпадение — по вопросу. */
+        val SECRET_ANSWERS = listOf("token")
+
+        const val HIDDEN = "не записано"
     }
 }

@@ -212,14 +212,18 @@ private fun FastbootRefusedLines(outcome: FastbootMutationOutcome.Refused) {
         text = stringResource(R.string.fastboot_console_fail, outcome.command, outcome.detail),
         style = MaterialTheme.typography.bodyMedium,
     )
-    // Про раздел говорится прямо: отказ — слово устройства, а не доказательство
-    // целости. Иначе оператор прочитал бы «FAIL» как «ничего не случилось».
-    if (outcome.mutation == FastbootMutationClass.PARTITION) {
-        Text(
-            text = stringResource(R.string.fastboot_mutation_refusal_is_not_proof),
-            style = MaterialTheme.typography.bodySmall,
-        )
+    // Про раздел и про замок говорится прямо: отказ — слово устройства, а не
+    // доказательство целости. Иначе оператор прочитал бы «FAIL» как «ничего не
+    // случилось». Формулировки разные, потому что разное и то, о чём речь.
+    refusalCaveatOf(outcome.mutation)?.let { caveat ->
+        Text(text = stringResource(caveat), style = MaterialTheme.typography.bodySmall)
     }
+}
+
+private fun refusalCaveatOf(mutation: FastbootMutationClass): Int? = when (mutation) {
+    FastbootMutationClass.PARTITION -> R.string.fastboot_mutation_refusal_is_not_proof
+    FastbootMutationClass.LOCK -> R.string.fastboot_mutation_lock_refusal
+    else -> null
 }
 
 @Composable
@@ -228,12 +232,17 @@ private fun FastbootUnknownLines(outcome: FastbootMutationOutcome.Unknown) {
         text = stringResource(R.string.fastboot_console_no_answer, outcome.command, outcome.detail),
         style = MaterialTheme.typography.bodyMedium,
     )
-    if (outcome.mutation == FastbootMutationClass.PARTITION) {
-        Text(
-            text = stringResource(R.string.fastboot_mutation_partition_unknown),
-            style = MaterialTheme.typography.bodyMedium,
-        )
+    // Неизвестное состояние называется тем словом, которое ему подходит: у
+    // раздела — раздел, у замка — замок и данные вместе с ним.
+    unknownCaveatOf(outcome.mutation)?.let { caveat ->
+        Text(text = stringResource(caveat), style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+private fun unknownCaveatOf(mutation: FastbootMutationClass): Int? = when (mutation) {
+    FastbootMutationClass.PARTITION -> R.string.fastboot_mutation_partition_unknown
+    FastbootMutationClass.LOCK -> R.string.fastboot_mutation_lock_unknown
+    else -> null
 }
 
 /**
