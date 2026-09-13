@@ -1,6 +1,7 @@
 package io.github.ncorror.nekoflash.fastboot
 
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLaneState
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootReply
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootVariableSnapshot
 
@@ -61,6 +62,24 @@ public sealed interface FastbootConsoleState {
         val reply: FastbootReply?,
         val detail: String,
         val untouched: Boolean,
+        val lane: FastbootLaneState,
+    ) : FastbootConsoleState
+
+    /**
+     * Исход команды, способной изменить устройство.
+     *
+     * Исход хранится целиком, а не разложенный по полям, и это не лень:
+     * [FastbootMutationOutcome] уже различает случаи, которые нельзя смешивать —
+     * отказ устройства, неизвестность и уход по нашей же просьбе, — и
+     * пересобирать их в плоскую запись значило бы дать экрану возможность
+     * показать «ответа нет» там, где верно «раздел в неизвестном состоянии».
+     *
+     * Через этот исход идут **все** команды: и набранная руками, и построенная
+     * кнопкой. Иначе «один движок» перестал бы быть правдой в самом важном
+     * месте — набранный вручную `erase:` читался бы без границы мутации.
+     */
+    public data class Mutated(
+        val outcome: FastbootMutationOutcome,
         val lane: FastbootLaneState,
     ) : FastbootConsoleState
 

@@ -200,4 +200,18 @@
     <string name="fastboot_download_untouched">Буфер устройства не тронут: ни одного байта не отправлено.</string>
     <string name="fastboot_download_buffer_unknown">В буфере загрузки теперь что-то лежит; прошивать из него нельзя, пока устройство не подтвердило нагрузку целиком.</string>
     <string name="fastboot_download_note">download: наполняет буфер загрузки и ничего не прошивает — раздел меняет flash:, которого в этой фазе нет. Нагрузку порождает приложение: выбор файла требует artifact source из Phase 8. Сколько устройство готово принять — его дело: max-download-size это диагностика, а не наша авторизация, поэтому слишком большой объём отклоняет устройство, а не мы.</string>
+    <string name="fastboot_typed_title">Команды, меняющие устройство</string>
+    <string name="fastboot_typed_reboot">Перезагрузить</string>
+    <string name="fastboot_typed_reboot_bootloader">В загрузчик</string>
+    <string name="fastboot_typed_reboot_fastbootd">В fastbootd</string>
+    <string name="fastboot_typed_boot">Загрузиться из буфера</string>
+    <string name="fastboot_typed_slot_label">Слот</string>
+    <string name="fastboot_typed_set_active">Переключить слот</string>
+    <string name="fastboot_typed_note">Кнопка здесь не ходит в полосу отдельно: она собирает ту же строку и отдаёт её в то же поле, что и произвольная команда, — движок один, и разойтись им негде. У flash:, erase: и format: кнопки пока нет, и это не запрет: набрать их в поле можно прямо сейчас, они пройдут тем же путём и с той же границей мутации. Кнопки нет потому, что перед записью образа положено предупреждение и подтверждение словом, а осмысленной записи образа ещё нет — выбор файла появится позже. Переключение слота устройство может подтвердить словом и не сделать, поэтому слот перечитывается отдельно.</string>
+    <string name="fastboot_mutation_confirmed">Подтверждено перечитыванием: %1$s</string>
+    <string name="fastboot_mutation_refusal_is_not_proof">Отказ — это слово устройства о том, что команда не выполнена. Доказательством того, что раздел цел, он не является: известно, что устройство сказало, а не что оно успело сделать до отказа.</string>
+    <string name="fastboot_mutation_unconfirmed">%1$s → устройство ответило OKAY, но запрошено было %2$s, а устройство показывает %3$s. Переключением это не считается.</string>
+    <string name="fastboot_mutation_departed">%1$s → устройство ушло, не ответив (%2$d мс). Для перезагрузки это норма, а не потеря связи.</string>
+    <string name="fastboot_mutation_partition_unknown">Что теперь в разделе — неизвестно. Он мог остаться записанным наполовину, и полагаться на его содержимое нельзя.</string>
+    <string name="fastboot_mutation_not_started">%1$s → обмен не начался: %2$s. Устройство эту команду не видело.</string>
 </resources>

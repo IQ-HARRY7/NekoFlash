@@ -2,7 +2,10 @@ package io.github.ncorror.nekoflash.fastboot
 
 import io.github.ncorror.nekoflash.core.diagnostics.InMemoryDiagnosticSink
 import io.github.ncorror.nekoflash.core.model.SessionGeneration
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootCommands
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLaneState
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationClass
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootReply
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -38,14 +41,16 @@ class FastbootConsoleTest {
      */
     @Test
     fun aDeviceRefusalIsShownAsAnAnswer() {
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "FAILunknown command")))
+        val sink = InMemoryDiagnosticSink()
+        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "FAILunknown command")), sink)
 
         controller.runCommand("oem something")
 
-        val state = controller.console.value as FastbootConsoleState.Answered
-        assertEquals(FastbootReply.FAIL, state.reply)
-        assertEquals("unknown command", state.payload)
+        val state = controller.console.value as FastbootConsoleState.Mutated
+        val refused = state.outcome as FastbootMutationOutcome.Refused
+        assertEquals("unknown command", refused.detail)
         assertEquals("отказ рамку не портит", FastbootLaneState.IDLE, state.lane)
+        assertEquals("refused", sink.snapshot().last().fields["claim"])
     }
 
     /** Строки `INFO` доходят до оператора, а не теряются по пути. */
@@ -57,8 +62,10 @@ class FastbootConsoleTest {
 
         controller.runCommand("erase:cache")
 
-        val state = controller.console.value as FastbootConsoleState.Answered
-        assertEquals(listOf("erasing", "done"), state.info)
+        val state = controller.console.value as FastbootConsoleState.Mutated
+        val applied = state.outcome as FastbootMutationOutcome.Applied
+        assertEquals(listOf("erasing", "done"), applied.info)
+        assertEquals(FastbootMutationClass.PARTITION, applied.mutation)
     }
 
     /** Молчание — это не отказ, и в журнале оно называется иначе. */
@@ -69,9 +76,54 @@ class FastbootConsoleTest {
 
         controller.runCommand("getvar:product")
 
-        val state = controller.console.value as FastbootConsoleState.NotAnswered
+        val state = controller.console.value as FastbootConsoleState.Mutated
+        assertTrue(state.outcome is FastbootMutationOutcome.Unknown)
         assertEquals(FastbootLaneState.STALLED, state.lane)
         assertEquals("none", sink.snapshot().last().fields["reply"])
+        assertEquals("unknown", sink.snapshot().last().fields["claim"])
+    }
+
+    /**
+     * Та же тишина, та же полоса — и разные исходы, потому что команды разные.
+     *
+     * Набранный руками `erase:` обязан читаться как неизвестное состояние
+     * раздела, а `reboot` — как уход по нашей же просьбе. До того, как
+     * произвольная команда пошла через движок мутаций, обе писались в журнал
+     * одинаково, и разобрать по нему прогон было бы нельзя.
+     */
+    @Test
+    fun theSameSilenceIsJournalledDifferentlyForRebootAndForErase() {
+        val eraseSink = InMemoryDiagnosticSink()
+        connected(ClaimingCoordinator(listOf("OKAYno")), eraseSink).runCommand("erase:boot")
+        val rebootSink = InMemoryDiagnosticSink()
+        connected(ClaimingCoordinator(listOf("OKAYno")), rebootSink).runCommand("reboot-bootloader")
+
+        assertEquals("unknown", eraseSink.snapshot().last().fields["claim"])
+        assertEquals("PARTITION", eraseSink.snapshot().last().fields["mutation"])
+        assertEquals("departed", rebootSink.snapshot().last().fields["claim"])
+        assertEquals("REBOOT", rebootSink.snapshot().last().fields["mutation"])
+    }
+
+    /**
+     * Кнопка типизованной секции и поле консоли — один путь.
+     *
+     * Проверяется не «кнопка работает», а что она не заводит второго обмена:
+     * строка, собранная `FastbootCommands`, уходит через тот же `runCommand`,
+     * и на устройстве видно ровно её.
+     */
+    @Test
+    fun aTypedButtonAndTheRawFieldTravelTheSamePath() {
+        val coordinator = ClaimingCoordinator(listOf("OKAYno", "OKAY", "OKAYb"))
+        val controller = connected(coordinator)
+
+        controller.runCommand(FastbootCommands.setActive("_B"))
+
+        val state = controller.console.value as FastbootConsoleState.Mutated
+        assertEquals("current-slot=b", (state.outcome as FastbootMutationOutcome.Applied).confirmation)
+        assertEquals(
+            listOf("getvar:is-userspace", "set_active:b", "getvar:current-slot"),
+            coordinator.lastHandle?.sent,
+        )
     }
 
     /**
@@ -87,8 +139,9 @@ class FastbootConsoleTest {
 
         controller.runCommand("oem разблокировать")
 
-        val state = controller.console.value as FastbootConsoleState.NotAnswered
-        assertTrue("причина должна быть названа", state.detail.contains("ASCII"))
+        val state = controller.console.value as FastbootConsoleState.Mutated
+        val notStarted = state.outcome as FastbootMutationOutcome.NotStarted
+        assertTrue("причина должна быть названа", notStarted.detail.contains("ASCII"))
         assertEquals("на устройство ничего лишнего не ушло", 1, coordinator.lastHandle?.sent?.size)
     }
 
@@ -129,6 +182,7 @@ class FastbootConsoleTest {
 
         val state = controller.console.value as FastbootConsoleState.NotAnswered
         assertEquals("соединения нет", state.detail)
+        assertEquals(FastbootLaneState.CLOSED, state.lane)
     }
 
     /** Соединение отпущено — консоль возвращается в исходное, а не хранит старый ответ. */

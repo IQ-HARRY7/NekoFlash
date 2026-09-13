@@ -19,6 +19,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.ncorror.nekoflash.R
 import io.github.ncorror.nekoflash.fastboot.FastbootConsoleState
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationClass
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootReply
 
 /** Консоль Fastboot: произвольная команда, переменная по имени и весь список. */
@@ -96,6 +98,8 @@ fun FastbootConsoleSection(
             }
         }
 
+        FastbootTypedCommandsSection(onCommand = console.onCommand)
+
         FastbootConsoleOutcome(console.state)
 
         Text(
@@ -128,6 +132,100 @@ private fun FastbootConsoleOutcome(state: FastbootConsoleState) {
         is FastbootConsoleState.Variables -> FastbootVariableList(state)
 
         is FastbootConsoleState.Downloaded -> FastbootDownloadOutcomeLines(state)
+
+        is FastbootConsoleState.Mutated -> FastbootMutationLines(state)
+    }
+}
+
+/**
+ * Исход команды, способной изменить устройство.
+ *
+ * Главная строка — про состояние устройства, и она разная там, где разница
+ * есть. Отказ устройства это его слово, и целости раздела оно не доказывает.
+ * Уход по нашей же просьбе — не то же, что молчание неизвестно почему. А
+ * оборванная запись в раздел говорится прямо: что в разделе, неизвестно.
+ */
+@Composable
+private fun FastbootMutationLines(state: FastbootConsoleState.Mutated) {
+    when (val outcome = state.outcome) {
+        is FastbootMutationOutcome.Applied -> FastbootAppliedLines(outcome)
+
+        is FastbootMutationOutcome.Refused -> FastbootRefusedLines(outcome)
+
+        is FastbootMutationOutcome.Unconfirmed -> Text(
+            text = stringResource(
+                R.string.fastboot_mutation_unconfirmed,
+                outcome.command,
+                outcome.expected,
+                outcome.observed,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        is FastbootMutationOutcome.Departed -> Text(
+            text = stringResource(R.string.fastboot_mutation_departed, outcome.command, outcome.waitedMillis),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+
+        is FastbootMutationOutcome.Unknown -> FastbootUnknownLines(outcome)
+
+        is FastbootMutationOutcome.NotStarted -> Text(
+            text = stringResource(R.string.fastboot_mutation_not_started, outcome.command, outcome.detail),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    FastbootLaneLine(state.lane.name)
+}
+
+@Composable
+private fun FastbootAppliedLines(outcome: FastbootMutationOutcome.Applied) {
+    Text(
+        text = stringResource(R.string.fastboot_console_okay, outcome.command, outcome.payload.ifBlank { "—" }),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    // Подтверждение показывается там, где согласие устройства доказательством
+    // не является: по строке видно, чем именно исход подтверждён.
+    outcome.confirmation?.let { confirmed ->
+        Text(
+            text = stringResource(R.string.fastboot_mutation_confirmed, confirmed),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    outcome.info.forEach { line ->
+        Text(
+            text = stringResource(R.string.fastboot_console_info, line),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun FastbootRefusedLines(outcome: FastbootMutationOutcome.Refused) {
+    Text(
+        text = stringResource(R.string.fastboot_console_fail, outcome.command, outcome.detail),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    // Про раздел говорится прямо: отказ — слово устройства, а не доказательство
+    // целости. Иначе оператор прочитал бы «FAIL» как «ничего не случилось».
+    if (outcome.mutation == FastbootMutationClass.PARTITION) {
+        Text(
+            text = stringResource(R.string.fastboot_mutation_refusal_is_not_proof),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun FastbootUnknownLines(outcome: FastbootMutationOutcome.Unknown) {
+    Text(
+        text = stringResource(R.string.fastboot_console_no_answer, outcome.command, outcome.detail),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    if (outcome.mutation == FastbootMutationClass.PARTITION) {
+        Text(
+            text = stringResource(R.string.fastboot_mutation_partition_unknown),
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

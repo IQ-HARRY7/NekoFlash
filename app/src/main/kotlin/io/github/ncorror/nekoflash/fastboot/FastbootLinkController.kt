@@ -13,8 +13,10 @@ import io.github.ncorror.nekoflash.payload.GeneratedPayload
 import io.github.ncorror.nekoflash.payload.GeneratedPayloadStream
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootDownload
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootDownloadOutcome
-import io.github.ncorror.nekoflash.protocol.fastboot.FastbootExchange
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootModeProbe
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutation
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationClass
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootVariable
 import io.github.ncorror.nekoflash.usb.api.UsbClaimResult
 import io.github.ncorror.nekoflash.usb.api.UsbTransportHandle
@@ -124,9 +126,23 @@ public class FastbootLinkController(
      * Fastboot, знает устройство, и его `FAIL` — это ответ, а не наша ошибка
      * (`01` §3). Отказать полоса может только по двум причинам провода, и обе
      * она называет: команда не передаётся в ASCII либо не помещается в кадр.
+     *
+     * **Через этот же вызов идут кнопки типизованной секции.** Они не ходят в
+     * полосу мимо него и не строят свой обмен: кнопка собирает строку через
+     * `FastbootCommands` и отдаёт её сюда. Так «один движок» становится
+     * проверяемым утверждением, а не обещанием: второго пути просто нет.
+     *
+     * Исход читается через границу мутации (`03` §3), и для набранной руками
+     * команды это так же важно, как для кнопки: оборванный `erase:` обязан
+     * читаться как неизвестное состояние раздела, а не как «ответа нет».
      */
     public fun runCommand(command: String) {
-        busy("fastboot_command", command) { lane, trimmed -> report(trimmed, lane.run(trimmed), lane) }
+        busy("fastboot_command", command) { lane, trimmed ->
+            FastbootConsoleState.Mutated(
+                outcome = FastbootMutation(lane, FastbootGetVar(lane)).run(trimmed),
+                lane = lane.state,
+            )
+        }
     }
 
     /** Спрашивает одну переменную по имени. */
@@ -268,36 +284,6 @@ public class FastbootLinkController(
         }
     }
 
-    private fun report(command: String, exchange: FastbootExchange, live: FastbootLane): FastbootConsoleState =
-        when (exchange) {
-            is FastbootExchange.Completed ->
-                FastbootConsoleState.Answered(command, exchange.reply, exchange.payload, exchange.info, live.state)
-
-            is FastbootExchange.TimedOut -> FastbootConsoleState.NotAnswered(
-                command = command,
-                detail = "ответа не было ${exchange.waitedMillis} мс",
-                lane = live.state,
-            )
-
-            // Фаза данных открыта, а передавать нечего: рамка потеряна, и
-            // сказать об этом обязательно. Передача данных — пункт Phase 5,
-            // который ещё не начат.
-            is FastbootExchange.DataPhase -> {
-                live.stall()
-                FastbootConsoleState.NotAnswered(
-                    command = command,
-                    detail = "устройство ждёт ${exchange.declaredSize ?: "?"} байт, передавать их пока нечем",
-                    lane = live.state,
-                )
-            }
-
-            is FastbootExchange.NotReady ->
-                FastbootConsoleState.NotAnswered(command, "полоса занята: ${exchange.state}", live.state)
-
-            is FastbootExchange.NotSent ->
-                FastbootConsoleState.NotAnswered(command, exchange.reason, live.state)
-        }
-
     private fun record(event: String, state: FastbootConsoleState) {
         val fields = when (state) {
             is FastbootConsoleState.Answered -> mapOf(
@@ -336,6 +322,12 @@ public class FastbootLinkController(
                 "lane" to state.lane.name,
             )
 
+            // Класс мутации и утверждение о состоянии пишутся всегда, включая
+            // команды, набранные руками. Без класса запись «ответа не было» не
+            // отличить от «раздел в неизвестном состоянии», а это ровно та
+            // разница, ради которой написан `03` §3.
+            is FastbootConsoleState.Mutated -> mutationFields(state)
+
             is FastbootConsoleState.Variables -> mapOf(
                 "variables" to state.snapshot.variables.size.toString(),
                 "duplicates" to state.snapshot.duplicates.size.toString(),
@@ -351,6 +343,74 @@ public class FastbootLinkController(
             else -> mapOf("state" to state.javaClass.simpleName)
         }
         emit(event + "_finished", fields)
+    }
+
+    /**
+     * Исход мутации в поля журнала.
+     *
+     * `claim` — то, что можно утверждать о состоянии устройства, одним словом:
+     * по нему прогон разбирается без чтения текста. `applied` означает, что
+     * устройство сказало «сделал»; `refused` — что оно сказало «не сделал», и
+     * доказательством целости раздела это не является; `unknown` — что мы не
+     * знаем; `departed` — что устройство ушло по нашей же просьбе.
+     */
+    private fun mutationFields(state: FastbootConsoleState.Mutated): Map<String, String> {
+        val outcome = state.outcome
+        val common = mapOf(
+            "command" to outcome.command,
+            "mutation" to mutationClassOf(outcome).name,
+            "lane" to state.lane.name,
+        )
+        return common + when (outcome) {
+            is FastbootMutationOutcome.Applied -> mapOf(
+                "claim" to "applied",
+                "reply" to "OKAY",
+                "payload" to outcome.payload,
+                "infoLines" to outcome.info.size.toString(),
+                "confirmation" to (outcome.confirmation ?: "none"),
+            )
+
+            is FastbootMutationOutcome.Refused -> mapOf(
+                "claim" to "refused",
+                "reply" to "FAIL",
+                "detail" to outcome.detail,
+            )
+
+            is FastbootMutationOutcome.Unconfirmed -> mapOf(
+                "claim" to "unconfirmed",
+                "reply" to "OKAY",
+                "expected" to outcome.expected,
+                "observed" to outcome.observed,
+            )
+
+            is FastbootMutationOutcome.Departed -> mapOf(
+                "claim" to "departed",
+                "reply" to "none",
+                "waitedMillis" to outcome.waitedMillis.toString(),
+                "infoLines" to outcome.info.size.toString(),
+            )
+
+            is FastbootMutationOutcome.Unknown -> mapOf(
+                "claim" to "unknown",
+                "reply" to "none",
+                "detail" to outcome.detail,
+            )
+
+            is FastbootMutationOutcome.NotStarted -> mapOf(
+                "claim" to "not_started",
+                "reply" to "none",
+                "detail" to outcome.detail,
+            )
+        }
+    }
+
+    private fun mutationClassOf(outcome: FastbootMutationOutcome): FastbootMutationClass = when (outcome) {
+        is FastbootMutationOutcome.Applied -> outcome.mutation
+        is FastbootMutationOutcome.Refused -> outcome.mutation
+        is FastbootMutationOutcome.Unconfirmed -> outcome.mutation
+        is FastbootMutationOutcome.Unknown -> outcome.mutation
+        is FastbootMutationOutcome.Departed -> FastbootMutationClass.REBOOT
+        is FastbootMutationOutcome.NotStarted -> FastbootMutation.classify(outcome.command)
     }
 
     private fun probe(generation: SessionGeneration, claimed: UsbTransportHandle) {
