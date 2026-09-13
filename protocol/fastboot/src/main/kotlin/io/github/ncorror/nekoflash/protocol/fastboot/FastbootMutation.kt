@@ -47,6 +47,18 @@ public enum class FastbootMutationClass {
      * перенос, и помечено как наше.
      */
     LOCK,
+
+    /**
+     * Меняет **разметку** super, а не содержимое раздела.
+     *
+     * Отдельный класс потому, что правда про исход тут другая: оборванный
+     * `resize-logical-partition:` оставляет неизвестной таблицу разделов, а не
+     * байты внутри одного из них. Сказать «раздел мог остаться записанным
+     * наполовину» было бы не строже, а просто неверно.
+     *
+     * Четыре имени взяты из Legacy `isLogicalPartitionManagementCommand`.
+     */
+    SUPER,
 }
 
 /** Чем кончилась команда, способная изменить устройство. */
@@ -296,6 +308,7 @@ public class FastbootMutation(
                 PARTITION_PREFIXES.any { clean.startsWith(it) } -> FastbootMutationClass.PARTITION
                 SLOT_PREFIXES.any { clean.startsWith(it) } -> FastbootMutationClass.SLOT
                 clean in LOCK_COMMANDS -> FastbootMutationClass.LOCK
+                FastbootLogicalPartitions.manages(clean) -> FastbootMutationClass.SUPER
                 clean == BOOT -> FastbootMutationClass.BOOT
                 clean == REBOOT || clean.startsWith("$REBOOT-") -> FastbootMutationClass.REBOOT
                 else -> FastbootMutationClass.NONE

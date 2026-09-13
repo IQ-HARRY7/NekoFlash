@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import io.github.ncorror.nekoflash.R
 import io.github.ncorror.nekoflash.fastboot.FastbootConsoleState
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationClass
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootPartitionIndex
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootReply
 
@@ -372,6 +373,22 @@ private fun FastbootVariableList(state: FastbootConsoleState.Variables) {
         ),
         style = MaterialTheme.typography.bodyMedium,
     )
+
+    // Инвентарь считается из того же ответа и показывается рядом: «названо»
+    // и «подтверждено» — разные числа, потому что `has-slot` отвечают и про
+    // имена, которых у устройства нет. Показать одно вместо двух значило бы
+    // выдать догадку за перечень.
+    val inventory = FastbootPartitionIndex.of(snapshot)
+    if (inventory.partitions.isNotEmpty()) {
+        Text(
+            text = stringResource(
+                R.string.fastboot_partitions_summary,
+                inventory.partitions.size,
+                inventory.concrete.size,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
 
     snapshot.variables.forEach { (name, value) ->
         Text(

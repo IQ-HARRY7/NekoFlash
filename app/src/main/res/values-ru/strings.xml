@@ -233,4 +233,5 @@
     <string name="fastboot_fetch_complete">%1$s прочитан целиком: %2$d байт</string>
     <string name="fastboot_fetch_partial">%1$s прочитан НЕ целиком: %2$d байт. Выдавать это за раздел нельзя — недостающий кусок снаружи не отличить от нулей внутри.</string>
     <string name="fastboot_fetch_sha256">SHA-256 прочитанного: %1$s</string>
+    <string name="fastboot_partitions_summary">Разделов названо: %1$d, подтверждено существенным полем: %2$d. Подтверждает размер, тип или признак логического; один только has-slot доказательством не является — устройства отвечают на него и про имена, которых у них нет.</string>
 </resources>
