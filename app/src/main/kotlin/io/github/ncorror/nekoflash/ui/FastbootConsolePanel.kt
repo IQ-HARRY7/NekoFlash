@@ -100,12 +100,19 @@ fun FastbootConsoleSection(
 
         FastbootTypedCommandsSection(onCommand = console.onCommand)
 
+        // Исход стоит сразу за последней кнопкой, и оба пояснения — под ним.
+        // Прогон §6.76: пояснение между кнопкой и ответом увело ответ за край
+        // экрана, и оператор трижды повторил мутирующую команду, решив, что
+        // ничего не произошло. Текст, стоящий между действием и результатом,
+        // стоит дороже, чем то, что он объясняет.
         FastbootConsoleOutcome(console.state)
 
         Text(
             text = stringResource(R.string.fastboot_console_note),
             style = MaterialTheme.typography.bodySmall,
         )
+
+        FastbootTypedCommandsNote()
     }
 }
 

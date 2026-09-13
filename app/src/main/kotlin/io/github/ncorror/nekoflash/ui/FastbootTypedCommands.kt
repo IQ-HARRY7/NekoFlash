@@ -79,12 +79,27 @@ fun FastbootTypedCommandsSection(
         Button(onClick = { onCommand(FastbootCommands.setActive(slot)) }) {
             Text(stringResource(R.string.fastboot_typed_set_active))
         }
-
-        Text(
-            text = stringResource(R.string.fastboot_typed_note),
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
+}
+
+/**
+ * Пояснение к секции — отдельно и **ниже исхода**.
+ *
+ * Прогон `07` §6.76 показал, зачем: длинный текст, стоявший между последней
+ * кнопкой и строкой ответа, уводил ответ за нижний край экрана. Оператор нажал
+ * одну и ту же мутирующую команду три раза, решив, что ничего не произошло.
+ * На запертом загрузчике это стоило только времени, но привычка повторять
+ * мутирующую команду, потому что экран промолчал, — ровно то, чем ломают
+ * устройства. Объяснение важно, но оно не должно стоять между действием и его
+ * результатом.
+ */
+@Composable
+fun FastbootTypedCommandsNote(modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(R.string.fastboot_typed_note),
+        style = MaterialTheme.typography.bodySmall,
+        modifier = modifier,
+    )
 }
 
 /** Цель перезагрузки — часть команды, а не имя кнопки: `reboot-bootloader`. */
