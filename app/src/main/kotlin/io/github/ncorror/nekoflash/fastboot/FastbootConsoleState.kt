@@ -83,6 +83,27 @@ public sealed interface FastbootConsoleState {
         val lane: FastbootLaneState,
     ) : FastbootConsoleState
 
+    /**
+     * Исход чтения раздела с устройства — фаза DATA IN.
+     *
+     * [complete] отвечает на единственный важный здесь вопрос: прочитано всё
+     * или часть. Частичное чтение обязано называться частичным на всём пути —
+     * недостающий кусок снаружи не отличить от нулей внутри, и выдать одно за
+     * другое значило бы соврать о содержимом раздела (`03` §3).
+     *
+     * Содержимое не хранится: его подтверждают количество байт и отпечаток, как
+     * это уже принято для ADB `pull` (`07` §6.32). Сохранение в пользовательское
+     * место — artifact sink из Phase 8.
+     */
+    public data class Fetched(
+        val partition: String,
+        val bytes: Long,
+        val sha256: String,
+        val complete: Boolean,
+        val detail: String,
+        val lane: FastbootLaneState,
+    ) : FastbootConsoleState
+
     /** Ответ на `getvar:all` — разобранный список переменных. */
     public data class Variables(
         val snapshot: FastbootVariableSnapshot,

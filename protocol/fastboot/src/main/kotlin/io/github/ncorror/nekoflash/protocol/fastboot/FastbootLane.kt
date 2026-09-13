@@ -302,6 +302,143 @@ public class FastbootLane(
             }
         }
 
+    /**
+     * Принимает [expectedBytes] байт от устройства в [sink] — фаза DATA IN.
+     *
+     * **Направление фазы данных знает команда, а не кадр.** `DATA` выглядит
+     * одинаково у `download:` и у `fetch:`, поэтому приём и отправка — разные
+     * вызовы, а не одна догадливая функция.
+     *
+     * Правила взяты из Legacy `readRawDataTo`, а не выведены из симметрии с
+     * отправкой:
+     *
+     * 1. **Блок чтения ограничен 16 КиБ, и это осознанный компромисс
+     *    совместимости.** Комментарий стоит прямо над строкой: «Fetch остаётся
+     *    синхронным IN-путём и использует отдельный консервативный 16 KiB
+     *    compatibility-read. Это не связано с асинхронным UsbRequest DATA OUT
+     *    transport прошивки». Совпадение с [DATA_BLOCK_BYTES] случайное: тот из
+     *    `SYNC_BULK` у A2 и описывает отправку.
+     * 2. **Приём нулевой длины или отказ — провал сразу, без повтора.**
+     * 3. **Короткий приём законен** и дочитывается. Этим приём похож на
+     *    отправку, и только этим.
+     *
+     * Принятое не накапливается: байты уходят в [sink] по мере чтения.
+     * Приёмник не закрывается здесь — закрывает тот, кто открыл.
+     */
+    public fun receiveData(
+        sink: java.io.OutputStream,
+        expectedBytes: Long,
+        inactivityMillis: Long = DATA_IN_INACTIVITY_MS,
+        readTimeoutMillis: Int = DATA_READ_TIMEOUT_MS,
+    ): FastbootReceiveOutcome {
+        require(expectedBytes >= 0L) { "объявленный размер не может быть отрицательным" }
+        return if (currentState != FastbootLaneState.AWAITING_DATA) {
+            FastbootReceiveOutcome.NotReady(currentState)
+        } else {
+            drain(sink, expectedBytes, inactivityMillis, readTimeoutMillis)
+        }
+    }
+
+    private fun drain(
+        sink: java.io.OutputStream,
+        expectedBytes: Long,
+        inactivityMillis: Long,
+        readTimeoutMillis: Int,
+    ): FastbootReceiveOutcome {
+        val block = ByteArray(DATA_IN_BLOCK_BYTES)
+        var received = 0L
+        var failure: String? = null
+
+        while (failure == null && received < expectedBytes) {
+            val wanted = minOf(block.size.toLong(), expectedBytes - received).toInt()
+            val result = transport.receive(block, 0, wanted, readTimeoutMillis)
+            failure = receiveProblem(result, wanted, received)
+            if (failure == null) {
+                val count = (result as UsbTransferResult.Completed).bytes
+                failure = runCatching { sink.write(block, 0, count) }
+                    .exceptionOrNull()
+                    ?.let { "запись принятого не удалась на $received: ${it.javaClass.simpleName}" }
+                received += count
+            }
+        }
+
+        return settle(received, expectedBytes, failure, inactivityMillis)
+    }
+
+    /**
+     * Что помешало этому чтению, либо `null`.
+     *
+     * Приём нулевой длины отделён от отказа намеренно: устройство, замолчавшее
+     * посреди раздела, и отказ на уровне транспорта — разные наблюдения, и по
+     * журналу их надо различать.
+     */
+    private fun receiveProblem(result: UsbTransferResult, wanted: Int, received: Long): String? = when {
+        result is UsbTransferResult.Failed -> "приём не состоялся на $received: ${result.reason}"
+
+        result is UsbTransferResult.Completed && result.bytes <= 0 ->
+            "устройство перестало слать на $received"
+
+        result is UsbTransferResult.Completed && result.bytes > wanted ->
+            "неоднозначный приём на $received: принято ${result.bytes} из $wanted"
+
+        else -> null
+    }
+
+    private fun settle(
+        received: Long,
+        expectedBytes: Long,
+        failure: String?,
+        inactivityMillis: Long,
+    ): FastbootReceiveOutcome = when {
+        failure != null -> {
+            currentState = FastbootLaneState.STALLED
+            FastbootReceiveOutcome.Interrupted(received, expectedBytes, failure)
+        }
+
+        else -> {
+            currentState = FastbootLaneState.AWAITING_FINAL
+            receivedTerminal(received, inactivityMillis)
+        }
+    }
+
+    private fun receivedTerminal(received: Long, inactivityMillis: Long): FastbootReceiveOutcome =
+        when (val exchange = readUntilTerminal(inactivityMillis)) {
+            is FastbootExchange.Completed ->
+                FastbootReceiveOutcome.Completed(exchange.reply, exchange.payload, exchange.info, received)
+
+            is FastbootExchange.TimedOut -> FastbootReceiveOutcome.Interrupted(
+                bytesReceived = received,
+                expectedBytes = received,
+                detail = "байты приняты, ответа не было ${exchange.waitedMillis} мс",
+            )
+
+            else -> {
+                currentState = FastbootLaneState.STALLED
+                FastbootReceiveOutcome.Interrupted(received, received, "непредусмотренный ответ после данных")
+            }
+        }
+
+    /**
+     * Дочитывает терминальный кадр после **принятой** фазы данных.
+     *
+     * Нужен приёму (`FastbootReceiver`): байты идут от устройства, и полоса их
+     * не видит, но довести обмен до конца обязана всё равно — иначе следующая
+     * команда уйдёт в открытый обмен.
+     *
+     * Отправка этого не требует: там полоса сама считает байты и переходит в
+     * ожидание ответа. Здесь переход делается по слову вызывающего, и другого
+     * способа нет — направление фазы данных знает команда, а не кадр.
+     */
+    public fun finishDataPhase(inactivityMillis: Long = DEFAULT_INACTIVITY_MS): FastbootExchange {
+        require(inactivityMillis > 0L) { "бюджет бездействия должен быть положительным" }
+        return if (currentState != FastbootLaneState.AWAITING_DATA) {
+            FastbootExchange.NotReady(currentState)
+        } else {
+            currentState = FastbootLaneState.AWAITING_FINAL
+            readUntilTerminal(inactivityMillis)
+        }
+    }
+
     private fun send(command: String, writeTimeoutMillis: Int, inactivityMillis: Long): FastbootExchange {
         val bytes = command.toByteArray(Charsets.US_ASCII)
         return when {
@@ -426,6 +563,26 @@ public class FastbootLane(
          * (`usb:native`, 256 КиБ с конвейером), которого здесь нет.
          */
         public const val DATA_BLOCK_BYTES: Int = 16 * 1024
+
+        /**
+         * Блок **приёма** — 16 КиБ, из Legacy и по его же причине.
+         *
+         * Совпадение с [DATA_BLOCK_BYTES] случайное: тот взят из `SYNC_BULK` у
+         * A2 и описывает отправку. Свести их в одну константу значило бы
+         * связать два независимых решения и потерять обоснование каждого.
+         */
+        public const val DATA_IN_BLOCK_BYTES: Int = 16 * 1024
+
+        /** Таймаут одного чтения. У Legacy столько же на `bulkTransfer` в `readRawDataTo`. */
+        public const val DATA_READ_TIMEOUT_MS: Int = 10_000
+
+        /**
+         * Терпение на терминальный кадр после принятых байт.
+         *
+         * Две минуты, как у Legacy (`maxTotalTimeMs = 120_000`): устройство
+         * успело отдать раздел и вправе думать перед ответом.
+         */
+        public const val DATA_IN_INACTIVITY_MS: Long = 120_000L
 
         /** Таймаут одной записи блока. Взят у A2: `SYNC_BULK_TIMEOUT_MS`. */
         internal const val DATA_WRITE_TIMEOUT_MS: Int = 10_000

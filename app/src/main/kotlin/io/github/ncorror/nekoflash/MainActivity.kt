@@ -194,6 +194,7 @@ private fun fastbootConsolePanel(
     onVariable = link::readVariable,
     onAllVariables = link::readAllVariables,
     onDownload = link::downloadGenerated,
+    onFetch = link::fetchPartition,
 )
 
 private fun fileActions(link: AdbLinkController) = FileActions(

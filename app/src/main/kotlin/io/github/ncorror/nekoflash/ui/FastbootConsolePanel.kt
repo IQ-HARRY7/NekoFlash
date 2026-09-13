@@ -31,6 +31,8 @@ data class FastbootConsolePanel(
     val onAllVariables: () -> Unit = {},
     /** Загрузить в буфер устройства столько порождённых приложением байт. */
     val onDownload: (Long) -> Unit = {},
+    /** Прочитать раздел с устройства — фаза DATA IN. Ничего не меняет. */
+    val onFetch: (String) -> Unit = {},
 )
 
 /**
@@ -47,7 +49,6 @@ fun FastbootConsoleSection(
     modifier: Modifier = Modifier,
 ) {
     var command by remember { mutableStateOf("") }
-    var variable by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier.fillMaxWidth().padding(top = 8.dp),
@@ -69,34 +70,7 @@ fun FastbootConsoleSection(
             Text(stringResource(R.string.fastboot_command_send))
         }
 
-        OutlinedTextField(
-            value = variable,
-            onValueChange = { variable = it },
-            label = { Text(stringResource(R.string.fastboot_variable_label)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { console.onVariable(variable) }) {
-                Text(stringResource(R.string.fastboot_variable_read))
-            }
-            Button(onClick = console.onAllVariables) {
-                Text(stringResource(R.string.fastboot_variable_read_all))
-            }
-        }
-
-        Text(
-            text = stringResource(R.string.fastboot_download_title),
-            style = MaterialTheme.typography.titleSmall,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { console.onDownload(SMALL_DOWNLOAD_BYTES) }) {
-                Text(stringResource(R.string.fastboot_download_small))
-            }
-            Button(onClick = { console.onDownload(LARGE_DOWNLOAD_BYTES) }) {
-                Text(stringResource(R.string.fastboot_download_large))
-            }
-        }
+        FastbootReadControls(console)
 
         FastbootTypedCommandsSection(onCommand = console.onCommand)
 
@@ -113,6 +87,58 @@ fun FastbootConsoleSection(
         )
 
         FastbootTypedCommandsNote()
+    }
+}
+
+/**
+ * Всё, что только читает: переменная, весь список и раздел целиком.
+ *
+ * Загрузка в буфер стоит здесь же, потому что буфер — не раздел: `download:`
+ * ничего не прошивает. Разрушающие команды живут отдельно, рядом с замком.
+ */
+@Composable
+private fun FastbootReadControls(console: FastbootConsolePanel) {
+    var variable by remember { mutableStateOf("") }
+    var partition by remember { mutableStateOf("") }
+
+    OutlinedTextField(
+        value = variable,
+        onValueChange = { variable = it },
+        label = { Text(stringResource(R.string.fastboot_variable_label)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { console.onVariable(variable) }) {
+            Text(stringResource(R.string.fastboot_variable_read))
+        }
+        Button(onClick = console.onAllVariables) {
+            Text(stringResource(R.string.fastboot_variable_read_all))
+        }
+    }
+
+    OutlinedTextField(
+        value = partition,
+        onValueChange = { partition = it },
+        label = { Text(stringResource(R.string.fastboot_fetch_label)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Button(onClick = { console.onFetch(partition) }) {
+        Text(stringResource(R.string.fastboot_fetch_read))
+    }
+
+    Text(
+        text = stringResource(R.string.fastboot_download_title),
+        style = MaterialTheme.typography.titleSmall,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { console.onDownload(SMALL_DOWNLOAD_BYTES) }) {
+            Text(stringResource(R.string.fastboot_download_small))
+        }
+        Button(onClick = { console.onDownload(LARGE_DOWNLOAD_BYTES) }) {
+            Text(stringResource(R.string.fastboot_download_large))
+        }
     }
 }
 
@@ -141,7 +167,38 @@ private fun FastbootConsoleOutcome(state: FastbootConsoleState) {
         is FastbootConsoleState.Downloaded -> FastbootDownloadOutcomeLines(state)
 
         is FastbootConsoleState.Mutated -> FastbootMutationLines(state)
+
+        is FastbootConsoleState.Fetched -> FastbootFetchLines(state)
     }
+}
+
+/**
+ * Исход чтения раздела.
+ *
+ * Главная строка — полнота, а не объём: частичное чтение обязано называться
+ * частичным. Отпечаток показывается всегда, но он доказывает **прочитанное**, а
+ * не содержимое раздела на устройстве.
+ */
+@Composable
+private fun FastbootFetchLines(state: FastbootConsoleState.Fetched) {
+    Text(
+        text = stringResource(
+            if (state.complete) R.string.fastboot_fetch_complete else R.string.fastboot_fetch_partial,
+            state.partition,
+            state.bytes,
+        ),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    if (state.sha256.isNotEmpty()) {
+        Text(
+            text = stringResource(R.string.fastboot_fetch_sha256, state.sha256),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (state.detail.isNotBlank()) {
+        Text(text = state.detail, style = MaterialTheme.typography.bodySmall)
+    }
+    FastbootLaneLine(state.lane.name)
 }
 
 /**

@@ -21,6 +21,19 @@ internal sealed interface FakeInbound {
 
     /** Успешный приём нулевой длины — устройство молчит, но передача прошла. */
     data object Empty : FakeInbound
+
+    /**
+     * Сырые байты фазы DATA IN, а не кадр.
+     *
+     * Отдельный вид, потому что снаружи они ничем не отличаются от кадра:
+     * направление фазы данных знает команда, а не то, что пришло по проводу.
+     * Подставной транспорт обязан уметь это воспроизвести, иначе приём
+     * проверялся бы на том, чего в нём нет.
+     */
+    data class Payload(val bytes: ByteArray) : FakeInbound {
+        override fun equals(other: Any?): Boolean = this === other
+        override fun hashCode(): Int = System.identityHashCode(this)
+    }
 }
 
 /**
@@ -75,6 +88,9 @@ internal class FakeFastbootTransport(
 
     fun willReceiveEmpty(): FakeFastbootTransport = apply { inbound += FakeInbound.Empty }
 
+    /** Отдать эти байты как содержимое фазы DATA IN. */
+    fun willSendData(bytes: ByteArray): FakeFastbootTransport = apply { inbound += FakeInbound.Payload(bytes) }
+
     override val candidate: UsbInterfaceCandidate = CANDIDATE
 
     override val held: Boolean get() = !closed
@@ -89,6 +105,17 @@ internal class FakeFastbootTransport(
                 val bytes = next.text.toByteArray(Charsets.US_ASCII)
                 bytes.copyInto(destination, offset, 0, bytes.size)
                 UsbTransferResult.Completed(bytes.size)
+            }
+
+            is FakeInbound.Payload -> {
+                // Отдаём не больше, чем попросили: короткий приём законен, и
+                // остаток должен дочитываться следующим вызовом.
+                val count = minOf(next.bytes.size, length)
+                next.bytes.copyInto(destination, offset, 0, count)
+                if (count < next.bytes.size) {
+                    inbound.add(0, FakeInbound.Payload(next.bytes.copyOfRange(count, next.bytes.size)))
+                }
+                UsbTransferResult.Completed(count)
             }
         }
     }

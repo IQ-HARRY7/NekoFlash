@@ -12,10 +12,13 @@ import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockState
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockStatus
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootReply
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMode
+import io.github.ncorror.nekoflash.payload.DigestingSink
 import io.github.ncorror.nekoflash.payload.GeneratedPayload
 import io.github.ncorror.nekoflash.payload.GeneratedPayloadStream
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootDownload
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootDownloadOutcome
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootFetch
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootFetchOutcome
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootModeProbe
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutation
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMutationClass
@@ -211,6 +214,49 @@ public class FastbootLinkController(
         }
     }
 
+    /**
+     * Читает раздел с устройства — фаза DATA IN.
+     *
+     * Содержимое нигде не собирается: приёмник считает байты и отпечаток, как
+     * это уже принято для ADB `pull` (`07` §6.32). Сохранение в пользовательское
+     * место требует artifact sink из Phase 8.
+     *
+     * **Ничего не меняет.** `fetch:` только читает; на запертом загрузчике
+     * устройство, скорее всего, откажет — Legacy предупреждает об этом и
+     * запрещать не пытается, решение принадлежит устройству.
+     */
+    public fun fetchPartition(partition: String) {
+        busy("fastboot_fetch", partition) { lane, name ->
+            val sink = DigestingSink()
+            val outcome = FastbootFetch(lane, FastbootGetVar(lane))
+                .fetch(name, sink)
+            fetched(name, sink, outcome, lane.state)
+        }
+    }
+
+    private fun fetched(
+        partition: String,
+        sink: DigestingSink,
+        outcome: FastbootFetchOutcome,
+        lane: FastbootLaneState,
+    ): FastbootConsoleState {
+        val complete = outcome is FastbootFetchOutcome.Completed
+        val detail = when (outcome) {
+            is FastbootFetchOutcome.Completed -> "кусков: ${outcome.chunks}"
+            is FastbootFetchOutcome.Refused -> outcome.detail
+            is FastbootFetchOutcome.Partial -> outcome.detail
+            is FastbootFetchOutcome.NotStarted -> outcome.detail
+        }
+        return FastbootConsoleState.Fetched(
+            partition = partition,
+            bytes = sink.bytes,
+            sha256 = if (sink.bytes > 0L) sink.sha256() else "",
+            complete = complete,
+            detail = detail,
+            lane = lane,
+        )
+    }
+
     private fun downloaded(
         declared: Long,
         outcome: FastbootDownloadOutcome,
@@ -339,6 +385,18 @@ public class FastbootLinkController(
             // отличить от «раздел в неизвестном состоянии», а это ровно та
             // разница, ради которой написан `03` §3.
             is FastbootConsoleState.Mutated -> mutationFields(state)
+
+            // Полнота пишется отдельным полем, а не выводится из числа байт:
+            // прочитанный целиком маленький раздел и оборванный большой дают
+            // одинаково правдоподобные числа.
+            is FastbootConsoleState.Fetched -> mapOf(
+                "partition" to state.partition,
+                "bytes" to state.bytes.toString(),
+                "sha256" to state.sha256,
+                "complete" to state.complete.toString(),
+                "detail" to state.detail,
+                "lane" to state.lane.name,
+            )
 
             is FastbootConsoleState.Variables -> mapOf(
                 "variables" to state.snapshot.variables.size.toString(),

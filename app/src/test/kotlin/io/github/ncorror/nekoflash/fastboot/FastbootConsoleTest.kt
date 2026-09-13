@@ -307,6 +307,56 @@ class FastbootConsoleTest {
     }
 
     /**
+     * Чтение раздела: содержимое не хранится, а подтверждается счётом и отпечатком.
+     *
+     * Тот же приём уже принят для ADB `pull` (`07` §6.32). Раздел бывает на
+     * несколько гигабайт, и положить его в память значило бы убить приложение
+     * на первом же большом чтении.
+     */
+    @Test
+    fun aFetchIsConfirmedByBytesAndDigestRatherThanKeptInMemory() {
+        val sink = InMemoryDiagnosticSink()
+        // Шестнадцать печатных символов служат шестнадцатью байтами фазы
+        // данных: по проводу кадр и содержимое ничем не отличаются, направление
+        // задаёт команда. Именно это и надо воспроизвести.
+        val controller = connected(
+            ClaimingCoordinator(
+                PROBE + listOf("FAILno", "FAILno", "DATA00000010", "0123456789abcdef", "OKAY"),
+            ),
+            sink,
+        )
+
+        controller.fetchPartition("boot")
+
+        val state = controller.console.value as FastbootConsoleState.Fetched
+        assertEquals(16L, state.bytes)
+        assertTrue("отпечаток должен быть посчитан", state.sha256.length == 64)
+        assertTrue(state.complete)
+    }
+
+    /**
+     * Частичное чтение называется частичным — и в состоянии, и в журнале.
+     *
+     * Выдать его за раздел нельзя: недостающий кусок снаружи не отличить от
+     * нулей внутри (`03` §3).
+     */
+    @Test
+    fun aPartialFetchIsNeverReportedAsComplete() {
+        val sink = InMemoryDiagnosticSink()
+        val controller = connected(
+            ClaimingCoordinator(PROBE + listOf("FAILno", "FAILno", "FAILFetch is not allowed in Lock State")),
+            sink,
+        )
+
+        controller.fetchPartition("boot")
+
+        val state = controller.console.value as FastbootConsoleState.Fetched
+        assertEquals(0L, state.bytes)
+        assertTrue("отказ полным чтением не считается", !state.complete)
+        assertEquals("false", sink.snapshot().last().fields["complete"])
+    }
+
+    /**
      * Загрузка доходит до устройства и её исход не приукрашивается.
      *
      * Проверяется главное поле — `untouched`: утверждать «ничего не
