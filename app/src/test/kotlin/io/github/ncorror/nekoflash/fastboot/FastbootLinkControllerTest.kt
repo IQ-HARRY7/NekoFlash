@@ -2,6 +2,7 @@ package io.github.ncorror.nekoflash.fastboot
 
 import io.github.ncorror.nekoflash.core.diagnostics.InMemoryDiagnosticSink
 import io.github.ncorror.nekoflash.core.model.SessionGeneration
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockState
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -35,7 +36,7 @@ class FastbootLinkControllerTest {
     fun theProbeResultReachesTheStateAndTheJournal() {
         val sink = InMemoryDiagnosticSink()
         val controller = FastbootLinkController(
-            claim = { ClaimingCoordinator(replies = listOf("OKAYyes")).claim() },
+            claim = { ClaimingCoordinator(replies = listOf("OKAYyes", "OKAYyes")).claim() },
             executor = { it.run() },
             diagnostics = sink,
         )
@@ -44,10 +45,63 @@ class FastbootLinkControllerTest {
 
         val connected = controller.state.value as FastbootLinkState.Connected
         assertEquals(FastbootMode.FASTBOOTD, connected.identity.mode)
+        assertEquals(FastbootLockState.UNLOCKED, connected.lock.state)
 
         val finished = sink.snapshot().last()
         assertEquals("fastboot_probe_finished", finished.message)
         assertEquals("FASTBOOTD", finished.fields["mode"])
+        assertEquals("UNLOCKED", finished.fields["lock"])
+    }
+
+    /**
+     * Замок читается тем же опросом и принадлежит этой generation.
+     *
+     * Проверяется не значение, а то, что состояние доходит до экрана и до
+     * журнала: форму предупреждения задаёт оно, и подставить сюда догадку
+     * значило бы спрашивать слово подтверждения не тогда, когда положено.
+     */
+    @Test
+    fun theLockStateIsReadByTheSameProbe() {
+        val sink = InMemoryDiagnosticSink()
+        val controller = FastbootLinkController(
+            claim = { ClaimingCoordinator(replies = listOf("OKAYno", "OKAYno")).claim() },
+            executor = { it.run() },
+            diagnostics = sink,
+        )
+
+        controller.connect(SessionGeneration(4))
+
+        val connected = controller.state.value as FastbootLinkState.Connected
+        assertEquals(FastbootLockState.LOCKED, connected.lock.state)
+        assertTrue("подтверждённый замок требует слова", connected.lock.typedConfirmation)
+        assertEquals("LOCKED", sink.snapshot().last().fields["lock"])
+    }
+
+    /**
+     * Устройство не знает про замок — это **не** `LOCKED`.
+     *
+     * `03` §5.1 требует для таких случаев обычный advisory без typed
+     * confirmation: иначе незнание превращается в запрет, а отменённый guard
+     * возвращается через чёрный ход.
+     */
+    @Test
+    fun anUnreadableLockIsNotTreatedAsLocked() {
+        val sink = InMemoryDiagnosticSink()
+        val controller = FastbootLinkController(
+            claim = { ClaimingCoordinator(replies = listOf("OKAYno", "FAILnot found")).claim() },
+            executor = { it.run() },
+            diagnostics = sink,
+        )
+
+        controller.connect(SessionGeneration(5))
+
+        val connected = controller.state.value as FastbootLinkState.Connected
+        assertEquals(FastbootLockState.UNKNOWN, connected.lock.state)
+        assertTrue("слова подтверждения не требуем", !connected.lock.typedConfirmation)
+        assertTrue(
+            "причина должна быть названа",
+            sink.snapshot().last().fields["lockDetail"]?.contains("not found") == true,
+        )
     }
 
     /**
@@ -60,7 +114,7 @@ class FastbootLinkControllerTest {
     fun anUnknownModeIsRecordedWithItsReason() {
         val sink = InMemoryDiagnosticSink()
         val controller = FastbootLinkController(
-            claim = { ClaimingCoordinator(replies = listOf("FAILunknown variable")).claim() },
+            claim = { ClaimingCoordinator(replies = listOf("FAILunknown variable", "FAILunknown variable")).claim() },
             executor = { it.run() },
             diagnostics = sink,
         )
@@ -83,7 +137,7 @@ class FastbootLinkControllerTest {
     fun theLaneStateIsRecordedAlongsideTheOutcome() {
         val sink = InMemoryDiagnosticSink()
         val controller = FastbootLinkController(
-            claim = { ClaimingCoordinator(replies = listOf("OKAYno")).claim() },
+            claim = { ClaimingCoordinator(replies = listOf("OKAYno", "OKAYno")).claim() },
             executor = { it.run() },
             diagnostics = sink,
         )
@@ -95,7 +149,7 @@ class FastbootLinkControllerTest {
 
     @Test
     fun disconnectingReleasesTheInterfaceAndClearsTheState() {
-        val coordinator = ClaimingCoordinator(replies = listOf("OKAYno"))
+        val coordinator = ClaimingCoordinator(replies = listOf("OKAYno", "OKAYno"))
         val controller = FastbootLinkController({ coordinator.claim() }, { it.run() }, InMemoryDiagnosticSink())
         controller.connect(SessionGeneration(1))
 

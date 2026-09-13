@@ -7,6 +7,9 @@ import io.github.ncorror.nekoflash.protocol.fastboot.FastbootGetVar
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootIdentity
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLane
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLaneState
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockProbe
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockState
+import io.github.ncorror.nekoflash.protocol.fastboot.FastbootLockStatus
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootReply
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootMode
 import io.github.ncorror.nekoflash.payload.GeneratedPayload
@@ -44,6 +47,15 @@ public sealed interface FastbootLinkState {
     public data class Connected(
         val generation: SessionGeneration,
         val identity: FastbootIdentity,
+        /**
+         * Замок **этой** generation.
+         *
+         * Принадлежит текущей сессии и в новую не переезжает: после
+         * перезагрузки старая generation инвалидируется, и замок определяется
+         * заново (`03` §5.1). Ничего не разрешает и не запрещает — задаёт
+         * форму предупреждения перед разрушающим действием.
+         */
+        val lock: FastbootLockStatus,
     ) : FastbootLinkState
 
     /** До обмена дело не дошло. */
@@ -447,11 +459,19 @@ public class FastbootLinkController(
         lane = opened
         emit("fastboot_probe_started", mapOf("generation" to generation.value.toString()))
 
-        val attempt = runCatching { FastbootModeProbe.probe(FastbootGetVar(opened)) }
+        val variables = FastbootGetVar(opened)
+        val attempt = runCatching { FastbootModeProbe.probe(variables) }
         val identity = attempt.getOrElse { failure ->
             // Исключение — программистская ошибка, а не ответ устройства.
             // Роль от этого не становится известной, поэтому UNKNOWN с текстом.
             FastbootIdentity(FastbootMode.UNKNOWN, failure.message ?: failure.javaClass.simpleName)
+        }
+
+        // Замок читается тем же опросом, что и роль: он нужен до первого
+        // разрушающего действия, а не в момент нажатия, и принадлежит этой
+        // generation.
+        val lock = runCatching { FastbootLockProbe.probe(variables) }.getOrElse { failure ->
+            FastbootLockStatus(FastbootLockState.UNKNOWN, failure.message ?: failure.javaClass.simpleName)
         }
 
         emit(
@@ -459,10 +479,12 @@ public class FastbootLinkController(
             mapOf(
                 "mode" to identity.mode.name,
                 "detail" to identity.detail,
+                "lock" to lock.state.name,
+                "lockDetail" to lock.detail,
                 "lane" to opened.state.name,
             ),
         )
-        mutableState.value = FastbootLinkState.Connected(generation, identity)
+        mutableState.value = FastbootLinkState.Connected(generation, identity, lock)
     }
 
     private fun emit(message: String, fields: Map<String, String>) {

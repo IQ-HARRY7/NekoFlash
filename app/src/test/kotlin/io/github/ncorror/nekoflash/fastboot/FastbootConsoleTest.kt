@@ -21,14 +21,14 @@ import org.junit.Test
 class FastbootConsoleTest {
     @Test
     fun anArbitraryCommandReachesTheDeviceAsTyped() {
-        val coordinator = ClaimingCoordinator(replies = listOf("OKAYno", "OKAY"))
+        val coordinator = ClaimingCoordinator(replies = PROBE + listOf("OKAY"))
         val controller = connected(coordinator)
 
         controller.runCommand("  oem device-info  ")
 
         assertEquals(
             "команда уходит без окружающих пробелов и без изменений",
-            listOf("getvar:is-userspace", "oem device-info"),
+            listOf("getvar:is-userspace", "getvar:unlocked", "oem device-info"),
             coordinator.lastHandle?.sent,
         )
     }
@@ -42,7 +42,7 @@ class FastbootConsoleTest {
     @Test
     fun aDeviceRefusalIsShownAsAnAnswer() {
         val sink = InMemoryDiagnosticSink()
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "FAILunknown command")), sink)
+        val controller = connected(ClaimingCoordinator(PROBE + listOf("FAILunknown command")), sink)
 
         controller.runCommand("oem something")
 
@@ -57,7 +57,7 @@ class FastbootConsoleTest {
     @Test
     fun theInfoLinesReachTheOperator() {
         val controller = connected(
-            ClaimingCoordinator(listOf("OKAYno", "INFOerasing", "INFOdone", "OKAY")),
+            ClaimingCoordinator(PROBE + listOf("INFOerasing", "INFOdone", "OKAY")),
         )
 
         controller.runCommand("erase:cache")
@@ -72,7 +72,7 @@ class FastbootConsoleTest {
     @Test
     fun silenceIsReportedSeparatelyFromARefusal() {
         val sink = InMemoryDiagnosticSink()
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno")), sink)
+        val controller = connected(ClaimingCoordinator(PROBE), sink)
 
         controller.runCommand("getvar:product")
 
@@ -94,9 +94,9 @@ class FastbootConsoleTest {
     @Test
     fun theSameSilenceIsJournalledDifferentlyForRebootAndForErase() {
         val eraseSink = InMemoryDiagnosticSink()
-        connected(ClaimingCoordinator(listOf("OKAYno")), eraseSink).runCommand("erase:boot")
+        connected(ClaimingCoordinator(PROBE), eraseSink).runCommand("erase:boot")
         val rebootSink = InMemoryDiagnosticSink()
-        connected(ClaimingCoordinator(listOf("OKAYno")), rebootSink).runCommand("reboot-bootloader")
+        connected(ClaimingCoordinator(PROBE), rebootSink).runCommand("reboot-bootloader")
 
         assertEquals("unknown", eraseSink.snapshot().last().fields["claim"])
         assertEquals("PARTITION", eraseSink.snapshot().last().fields["mutation"])
@@ -113,7 +113,7 @@ class FastbootConsoleTest {
      */
     @Test
     fun aTypedButtonAndTheRawFieldTravelTheSamePath() {
-        val coordinator = ClaimingCoordinator(listOf("OKAYno", "OKAY", "OKAYb"))
+        val coordinator = ClaimingCoordinator(PROBE + listOf("OKAY", "OKAYb"))
         val controller = connected(coordinator)
 
         controller.runCommand(FastbootCommands.setActive("_B"))
@@ -121,7 +121,7 @@ class FastbootConsoleTest {
         val state = controller.console.value as FastbootConsoleState.Mutated
         assertEquals("current-slot=b", (state.outcome as FastbootMutationOutcome.Applied).confirmation)
         assertEquals(
-            listOf("getvar:is-userspace", "set_active:b", "getvar:current-slot"),
+            listOf("getvar:is-userspace", "getvar:unlocked", "set_active:b", "getvar:current-slot"),
             coordinator.lastHandle?.sent,
         )
     }
@@ -134,7 +134,7 @@ class FastbootConsoleTest {
      */
     @Test
     fun aCommandTheWireCannotCarryIsNamedAndNotSent() {
-        val coordinator = ClaimingCoordinator(listOf("OKAYno", "OKAY"))
+        val coordinator = ClaimingCoordinator(PROBE + listOf("OKAY"))
         val controller = connected(coordinator)
 
         controller.runCommand("oem разблокировать")
@@ -142,26 +142,26 @@ class FastbootConsoleTest {
         val state = controller.console.value as FastbootConsoleState.Mutated
         val notStarted = state.outcome as FastbootMutationOutcome.NotStarted
         assertTrue("причина должна быть названа", notStarted.detail.contains("ASCII"))
-        assertEquals("на устройство ничего лишнего не ушло", 1, coordinator.lastHandle?.sent?.size)
+        assertEquals("на устройство ушёл только опрос", 2, coordinator.lastHandle?.sent?.size)
     }
 
     @Test
     fun aVariableIsReadByName() {
-        val coordinator = ClaimingCoordinator(listOf("OKAYno", "OKAYvayu"))
+        val coordinator = ClaimingCoordinator(PROBE + listOf("OKAYvayu"))
         val controller = connected(coordinator)
 
         controller.readVariable("product")
 
         val state = controller.console.value as FastbootConsoleState.Answered
         assertEquals("vayu", state.payload)
-        assertEquals(listOf("getvar:is-userspace", "getvar:product"), coordinator.lastHandle?.sent)
+        assertEquals(listOf("getvar:is-userspace", "getvar:unlocked", "getvar:product"), coordinator.lastHandle?.sent)
     }
 
     @Test
     fun theWholeVariableListIsParsedAndCounted() {
         val sink = InMemoryDiagnosticSink()
         val controller = connected(
-            ClaimingCoordinator(listOf("OKAYno", "INFOproduct: vayu", "INFOsecure: yes", "OKAY")),
+            ClaimingCoordinator(PROBE + listOf("INFOproduct: vayu", "INFOsecure: yes", "OKAY")),
             sink,
         )
 
@@ -188,13 +188,22 @@ class FastbootConsoleTest {
     /** Соединение отпущено — консоль возвращается в исходное, а не хранит старый ответ. */
     @Test
     fun disconnectingClearsTheConsole() {
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAY")))
+        val controller = connected(ClaimingCoordinator(PROBE + listOf("OKAY")))
         controller.runCommand("getvar:product")
 
         controller.disconnect()
 
         assertEquals(FastbootConsoleState.Idle, controller.console.value)
     }
+
+    /**
+     * Ответы, которые съедает сам опрос.
+     *
+     * Их два, потому что опрос читает и роль, и замок: роль различает
+     * загрузчик и `fastbootd`, замок задаёт форму предупреждения перед
+     * разрушающим действием. Оба `no` — заперто и не userspace, как у vayu.
+     */
+    private val PROBE = listOf("OKAYno", "OKAYno")
 
     private fun connected(
         coordinator: ClaimingCoordinator,
@@ -218,8 +227,7 @@ class FastbootConsoleTest {
         val sink = InMemoryDiagnosticSink()
         val controller = connected(
             ClaimingCoordinator(
-                listOf(
-                    "OKAYno",
+                PROBE + listOf(
                     "INFOcurrent-slot: a",
                     "INFOcurrent-slot: b",
                     "INFOtoken: s3cret-value",
@@ -257,7 +265,7 @@ class FastbootConsoleTest {
     fun theUnlockTokenNeverReachesTheDiagnosticsBundle() {
         val secret = "VQEBHgEQgHK4syxLQw4eZsMvvbcRywMEdmF5dQIEhNX7aQ"
         val sink = InMemoryDiagnosticSink()
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAY$secret")), sink)
+        val controller = connected(ClaimingCoordinator(PROBE + listOf("OKAY$secret")), sink)
 
         controller.readVariable("token")
 
@@ -278,7 +286,7 @@ class FastbootConsoleTest {
     fun theSameTokenIsHiddenWhenAVendorCommandAsksForIt() {
         val secret = "AAAABBBBCCCCDDDD"
         val sink = InMemoryDiagnosticSink()
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAY$secret")), sink)
+        val controller = connected(ClaimingCoordinator(PROBE + listOf("OKAY$secret")), sink)
 
         controller.runCommand("oem get_token")
 
@@ -291,7 +299,7 @@ class FastbootConsoleTest {
     @Test
     fun anOrdinaryAnswerIsStillJournalledAsItCame() {
         val sink = InMemoryDiagnosticSink()
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "OKAYvayu")), sink)
+        val controller = connected(ClaimingCoordinator(PROBE + listOf("OKAYvayu")), sink)
 
         controller.readVariable("product")
 
@@ -306,10 +314,10 @@ class FastbootConsoleTest {
      */
     @Test
     fun aDownloadReportsHowManyBytesWentAndWhetherAnythingChanged() {
-        val coordinator = ClaimingCoordinator(listOf("OKAYno", "DATA00001000", "OKAY"))
+        val coordinator = ClaimingCoordinator(PROBE + listOf("DATA00001000", "OKAY"))
         val sink = InMemoryDiagnosticSink()
         val controller = connected(coordinator, sink)
-        coordinator.lastHandle?.dataAfterCommands = 2
+        coordinator.lastHandle?.dataAfterCommands = 3
 
         controller.downloadGenerated(4096)
 
@@ -330,7 +338,7 @@ class FastbootConsoleTest {
     @Test
     fun aRefusalBeforeTheDataPhaseIsTheOnlyUntouchedOutcome() {
         val sink = InMemoryDiagnosticSink()
-        val controller = connected(ClaimingCoordinator(listOf("OKAYno", "FAILtoo large")), sink)
+        val controller = connected(ClaimingCoordinator(PROBE + listOf("FAILtoo large")), sink)
 
         controller.downloadGenerated(4096)
 
@@ -343,9 +351,9 @@ class FastbootConsoleTest {
     /** Оборванная передача — неизвестность, и «не изменилось» про неё сказать нельзя. */
     @Test
     fun anInterruptedDownloadNeverClaimsNothingChanged() {
-        val coordinator = ClaimingCoordinator(listOf("OKAYno", "DATA00001000", "OKAY"))
+        val coordinator = ClaimingCoordinator(PROBE + listOf("DATA00001000", "OKAY"))
         val controller = connected(coordinator)
-        coordinator.lastHandle?.dataAfterCommands = 2
+        coordinator.lastHandle?.dataAfterCommands = 3
         coordinator.lastHandle?.failDataWrite = true
 
         controller.downloadGenerated(4096)

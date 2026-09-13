@@ -13,9 +13,7 @@ Recovery and vendor workflows.
 - Phase 3: complete; ADB transport, protocol engines and the terminal verified on hardware.
 - Phase 4: complete; ADB professional services — concurrent stream dispatcher, Sync `STAT`/`RECV`/`SEND`,
   reboot, raw services and port forwarding, each proven on hardware.
-- Phase 5: complete; Fastboot generic engine — single synchronous lane, role probe, raw command,
-  `getvar` explorer, DATA OUT and the mutation boundary, each proven on hardware.
-- Phase 6: **current / in progress**; Fastboot DATA IN and modern partition workflows.
+- Phase 5: **current / in progress**; Fastboot generic engine.
 - Legacy and A2 are reference/evidence only.
 
 Per-item status lives in `docs/09_IMPLEMENTATION_ROADMAP_RU.md` and nowhere else; the hardware

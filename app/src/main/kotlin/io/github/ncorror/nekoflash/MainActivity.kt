@@ -181,6 +181,8 @@ private fun fastbootPanel(
             ?.let { session -> link.connect(session.generation) }
     },
     onDisconnect = link::disconnect,
+    // Тот же вход, что и у консоли: второго пути к полосе нет по построению.
+    onCommand = link::runCommand,
 )
 
 private fun fastbootConsolePanel(
