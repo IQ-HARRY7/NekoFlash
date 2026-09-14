@@ -318,4 +318,7 @@
     <string name="diagnostics_recent_title">Записывается прямо сейчас</string>
     <string name="diagnostics_recent_empty">В этом сеансе пока ничего не записано.</string>
     <string name="diagnostics_recent_note">Последние %1$d строк, свежие сверху. Полный отчёт — это выгрузка выше; панель здесь для того, чтобы прямо на прогоне видеть, пишется ли вообще то, ради чего прогон затеян.</string>
+    <string name="target_bar_label">Работаем с</string>
+    <string name="target_bar_state">%1$s · %2$s</string>
+    <string name="target_bar_others">Подключено ещё устройств: %1$d. Всё ниже относится к тому, что названо выше, — выберите другое, чтобы работать с ним.</string>
 </resources>

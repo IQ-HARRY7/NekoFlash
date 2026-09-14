@@ -347,27 +347,38 @@ private fun SessionList(
         )
         return
     }
-    sessions.forEach { session ->
-        SessionCard(
-            session = session,
-            adbLink = adbLink,
-            adbCommand = adbCommand,
-            files = files,
-            fileActions = fileActions,
-            onClaim = { onClaim(session) },
-            onRelease = { onRelease(session) },
-            onAdbConnect = { onAdbConnect(session) },
-            onAdbDisconnect = { onAdbDisconnect(session) },
-            onRunCommand = onRunCommand,
-            reboot = reboot,
-            rawService = rawService,
-            forward = forward,
-            reverse = reverse,
-            sideload = sideload,
-            fastboot = fastboot,
-            fastbootConsole = fastbootConsole,
-        )
-    }
+    // Рабочее место принадлежит одному устройству: соединение ADB одно, полоса
+    // Fastboot одна, и операция ведётся с одной целью. Показывать рядом то, что
+    // относится к разным целям, значило бы заставлять соотносить их глазами.
+    val chosen = rememberSaveable { mutableStateOf(sessions.first().generation.value) }
+    // Выбранное устройство могли отключить: тогда берём то, что есть, а не
+    // показываем пустоту на месте существующей цели.
+    val session = sessions.firstOrNull { it.generation.value == chosen.value } ?: sessions.first()
+
+    TargetBar(
+        sessions = sessions,
+        selected = session,
+        onSelect = { other -> chosen.value = other.generation.value },
+    )
+    SessionCard(
+        session = session,
+        adbLink = adbLink,
+        adbCommand = adbCommand,
+        files = files,
+        fileActions = fileActions,
+        onClaim = { onClaim(session) },
+        onRelease = { onRelease(session) },
+        onAdbConnect = { onAdbConnect(session) },
+        onAdbDisconnect = { onAdbDisconnect(session) },
+        onRunCommand = onRunCommand,
+        reboot = reboot,
+        rawService = rawService,
+        forward = forward,
+        reverse = reverse,
+        sideload = sideload,
+        fastboot = fastboot,
+        fastbootConsole = fastbootConsole,
+    )
     Text(
         text = stringResource(R.string.mode_requires_handshake),
         style = MaterialTheme.typography.bodySmall,
