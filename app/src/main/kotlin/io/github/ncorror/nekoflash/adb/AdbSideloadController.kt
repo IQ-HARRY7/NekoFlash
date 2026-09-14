@@ -9,6 +9,13 @@ import io.github.ncorror.nekoflash.core.artifact.ArtifactStaging
 import io.github.ncorror.nekoflash.core.artifact.ArtifactStagingDecision
 import io.github.ncorror.nekoflash.core.artifact.ArtifactStamps
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
+import io.github.ncorror.nekoflash.core.model.SessionGeneration
+import io.github.ncorror.nekoflash.core.model.TargetId
+import io.github.ncorror.nekoflash.core.operation.OperationIntent
+import io.github.ncorror.nekoflash.core.operation.OperationKind
+import io.github.ncorror.nekoflash.core.operation.OperationOutcome
+import io.github.ncorror.nekoflash.operation.OperationEngine
+import io.github.ncorror.nekoflash.operation.OperationHandle
 import io.github.ncorror.nekoflash.payload.GeneratedPayload
 import io.github.ncorror.nekoflash.protocol.adb.AdbConnection
 import io.github.ncorror.nekoflash.protocol.adb.AdbPeerMode
@@ -19,6 +26,7 @@ import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadOutcome
 import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadProgress
 import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadSource
 import java.io.File
+import java.time.Instant
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,6 +96,20 @@ public sealed interface AdbSideloadState {
 public class AdbSideloadController(
     private val executor: Executor,
     private val diagnostics: DiagnosticSink = DiagnosticSink { },
+    /**
+     * Владелец записей операций.
+     *
+     * Передача — длительная операция, и её след обязан пережить процесс: после
+     * падения решает **граница мутации**, а не то, что помнил экран (`06` §3).
+     */
+    private val operations: OperationEngine? = null,
+    /**
+     * Поднять foreground service.
+     *
+     * Функция, а не `Context`: контроллер не знает про Android и знать не
+     * должен — кто именно держит процесс, решает приложение.
+     */
+    private val holdProcess: () -> Unit = {},
 ) {
     private val mutableState = MutableStateFlow<AdbSideloadState>(AdbSideloadState.None)
 
@@ -110,12 +132,41 @@ public class AdbSideloadController(
      * нём по набору сервисов нельзя (`AdbConnectionBanner`). Отказ из-за режима
      * — это отказ **до единого байта**, и он называется, а не прячется.
      */
-    public fun start(connection: AdbConnection, peerMode: AdbPeerMode, sizeBytes: Long) {
+    public fun start(
+        connection: AdbConnection,
+        peerMode: AdbPeerMode,
+        sizeBytes: Long,
+        target: TargetId,
+        generation: SessionGeneration,
+    ) {
         if (running) return
         running = true
         cancelling.set(false)
         mutableState.value = AdbSideloadState.Running(nothingYet(sizeBytes), cancellable = true)
-        executor.execute { transfer(connection, peerMode, sizeBytes) }
+        val handle = record("пакет, порождённый приложением, $sizeBytes байт", target, generation, sizeBytes)
+        executor.execute { transfer(connection, peerMode, sizeBytes, handle) }
+    }
+
+    /**
+     * Заводит запись операции и держит процесс, пока она идёт.
+     *
+     * `null` означает, что владельца записей нет вовсе — так бывает в тестах;
+     * передача от этого не меняется, меняется только то, останется ли от неё
+     * след.
+     */
+    private fun record(
+        summary: String,
+        target: TargetId,
+        generation: SessionGeneration,
+        sizeBytes: Long?,
+    ): OperationHandle? {
+        holdProcess()
+        return operations?.begin(
+            intent = OperationIntent(OperationKind.ADB_SIDELOAD, summary),
+            targetId = target,
+            generation = generation,
+            totalBytes = sizeBytes,
+        )
     }
 
     /**
@@ -141,13 +192,16 @@ public class AdbSideloadController(
         connection: AdbConnection,
         peerMode: AdbPeerMode,
         stagingDirectory: File,
+        target: TargetId,
+        generation: SessionGeneration,
         origin: () -> ArtifactSource,
     ) {
         if (running) return
         running = true
         cancelling.set(false)
         mutableState.value = AdbSideloadState.Staging(0L, "")
-        executor.execute { prepare(connection, peerMode, stagingDirectory, origin) }
+        val handle = record("выбранный пакет", target, generation, sizeBytes = null)
+        executor.execute { prepare(connection, peerMode, stagingDirectory, origin, handle) }
     }
 
     private fun prepare(
@@ -155,18 +209,23 @@ public class AdbSideloadController(
         peerMode: AdbPeerMode,
         stagingDirectory: File,
         origin: () -> ArtifactSource,
+        handle: OperationHandle?,
     ) {
+        handle?.state(STAGING)
         val prepared = runCatching { ready(origin(), stagingDirectory) }.getOrElse { error ->
             Ready.No("источник не открылся: ${error.message ?: error.javaClass.simpleName}")
         }
         when (prepared) {
             is Ready.No -> {
                 mutableState.value = AdbSideloadState.Refused(prepared.detail)
+                // Отказ до передачи — это провал операции, а не неизвестность:
+                // устройство не тронуто, и сказать это можно уверенно.
+                handle?.finish(OperationOutcome.FAILED, REFUSED, Instant.now())
                 running = false
             }
 
             is Ready.Yes -> try {
-                transfer(connection, peerMode, prepared.size, prepared.access)
+                transfer(connection, peerMode, prepared.size, prepared.access, handle)
             } finally {
                 prepared.release()
             }
@@ -227,13 +286,19 @@ public class AdbSideloadController(
         }
     }
 
-    private fun transfer(connection: AdbConnection, peerMode: AdbPeerMode, sizeBytes: Long) {
+    private fun transfer(
+        connection: AdbConnection,
+        peerMode: AdbPeerMode,
+        sizeBytes: Long,
+        handle: OperationHandle?,
+    ) {
         val payload = GeneratedPayload(sizeBytes)
         transfer(
             connection = connection,
             peerMode = peerMode,
             sizeBytes = sizeBytes,
             access = { offset, length -> payload.read(offset, length) },
+            handle = handle,
         )
     }
 
@@ -242,14 +307,16 @@ public class AdbSideloadController(
         peerMode: AdbPeerMode,
         sizeBytes: Long,
         access: ArtifactRandomAccess,
+        handle: OperationHandle?,
     ) {
+        handle?.state(SENDING)
         val outcome = runCatching {
             connection.sideloadDriver(diagnostics).send(
                 source = AdbSideloadSource { offset, length -> access.read(offset, length) },
                 totalBytes = sizeBytes,
                 transportConnected = true,
                 peerIsSideload = peerMode == AdbPeerMode.SIDELOAD,
-                listener = Watcher(),
+                listener = Watcher(handle),
                 cancelRequested = cancelling::get,
             )
         }.getOrElse { error ->
@@ -258,11 +325,23 @@ public class AdbSideloadController(
                 error.message ?: error.javaClass.simpleName,
             )
         }
-        mutableState.value = AdbSideloadState.Finished(
-            outcome = outcome,
-            verificationPending = AdbSideloadContract.requiresVerification(outcome),
-        )
+        val pending = AdbSideloadContract.requiresVerification(outcome)
+        mutableState.value = AdbSideloadState.Finished(outcome, pending)
+        handle?.finish(outcomeOf(outcome, pending), outcome.javaClass.simpleName, Instant.now())
         running = false
+    }
+
+    /**
+     * Исход операции по исходу передачи.
+     *
+     * `DONEDONE` — это **не** успех операции: он кончает передачу, а не
+     * установку, и пока Recovery не сказало своего, исход неизвестен. Назвать
+     * его успехом значило бы записать в историю то, чего никто не подтверждал.
+     */
+    private fun outcomeOf(outcome: AdbSideloadOutcome, verificationPending: Boolean): OperationOutcome = when {
+        outcome is AdbSideloadOutcome.Cancelled -> OperationOutcome.CANCELLED
+        verificationPending -> OperationOutcome.UNKNOWN
+        else -> OperationOutcome.FAILED
     }
 
     /** Готов источник к передаче или нет. */
@@ -278,16 +357,20 @@ public class AdbSideloadController(
     }
 
     /** Переносит события передачи в состояние экрана. */
-    private inner class Watcher : AdbSideloadListener {
+    private inner class Watcher(private val handle: OperationHandle?) : AdbSideloadListener {
         @Volatile
         private var cancellable = true
 
         override fun onProgress(progress: AdbSideloadProgress) {
             mutableState.value = AdbSideloadState.Running(progress, cancellable)
+            handle?.progress(progress.servedBytes, progress.uniqueBytes, System.currentTimeMillis())
         }
 
         override fun onMutationBoundary() {
             cancellable = false
+            // В хранилище это уходит немедленно: после падения именно граница
+            // решает, можно ли сказать, что устройство не тронуто.
+            handle?.crossedMutationBoundary("первый блок нагрузки ушёл на провод", Instant.now())
             // Кнопка гаснет сразу, а не со следующим подтверждением: между
             // границей и первым подтверждением проходит целый блок, и всё это
             // время отмена была бы обещанием, которого никто не сдержит.
@@ -296,6 +379,12 @@ public class AdbSideloadController(
                 mutableState.value = shown.copy(cancellable = false)
             }
         }
+    }
+
+    private companion object {
+        const val STAGING = "STAGING"
+        const val SENDING = "SENDING"
+        const val REFUSED = "REFUSED"
     }
 
     private fun nothingYet(sizeBytes: Long): AdbSideloadProgress {

@@ -27,6 +27,24 @@
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+        Длительная операция не принадлежит экрану: пользователь вправе свернуть
+        приложение посреди прошивки, и передача от этого прерваться не должна
+        (docs/06_OPERATIONS_STORAGE_LIFECYCLE_RU.md §1). Тип connectedDevice —
+        тот, который платформа завела ровно для работы с подключённым
+        устройством.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!--
+        Уведомление показывает идущую операцию. Разрешение спрашивается у
+        пользователя; отказ операцию не отменяет и возможностей не урезает —
+        без уведомления система просто вправе прибрать процесс раньше, и это
+        честно сказано на экране, а не превращено в запрет.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".NekoFlashApplication"
         android:allowBackup="false"
@@ -57,5 +75,10 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/device_filter" />
         </activity>
+
+        <service
+            android:name=".operation.OperationService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
     </application>
 </manifest>

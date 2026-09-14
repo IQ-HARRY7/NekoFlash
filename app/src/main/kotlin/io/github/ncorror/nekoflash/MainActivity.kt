@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import io.github.ncorror.nekoflash.ui.NekoFlashApp
+import io.github.ncorror.nekoflash.ui.OperationsPanel
 import io.github.ncorror.nekoflash.adb.AdbLinkController
 import io.github.ncorror.nekoflash.fastboot.FastbootConsoleState
 import io.github.ncorror.nekoflash.fastboot.FastbootLinkController
@@ -102,6 +103,7 @@ class MainActivity : ComponentActivity() {
                     forward = forwardPanel(adbLink),
                     reverse = reversePanel(adbLink),
                     sideload = sideloadPanel(adbLink),
+                    operations = operationsPanel(application),
                     fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
                     fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
                     onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },
@@ -110,6 +112,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+/**
+ * История операций.
+ *
+ * Живые и законченные читаются из владельца операций, который живёт на уровне
+ * приложения: операция не принадлежит экрану и переживает его (`06` §1).
+ */
+@Composable
+private fun operationsPanel(application: NekoFlashApplication): OperationsPanel = OperationsPanel(
+    live = application.operations.live.collectAsState().value,
+    history = application.operations.history.collectAsState().value,
+)
 
 /** Проводка панели перезагрузки: состояние экрана и действие контроллера. */
 @Composable

@@ -272,4 +272,22 @@
     <string name="sideload_refused">Nothing was sent: %1$s</string>
     <string name="fastboot_fetch_to_file">Read the partition into a file…</string>
     <string name="fastboot_download_file">Load a file you pick…</string>
+    <string name="operation_channel_name">Running operations</string>
+    <string name="operation_channel_description">Shows the transfer that is running so the system does not stop it while the app is in the background.</string>
+    <string name="operation_notification_idle">NekoFlash</string>
+    <string name="operation_notification_waiting">Waiting for work.</string>
+    <string name="operation_notification_line">%1$s — %2$s</string>
+    <string name="operation_notification_line_percent">%1$s — %2$s, %3$d%%</string>
+    <string name="operations_title">Operations</string>
+    <string name="operations_note">History is kept so that an operation interrupted by the app being killed can be read honestly afterwards — not so that it can be resumed. There is nothing to resume: the transport went away with the process.</string>
+    <string name="operations_live_percent">%1$s — %2$d%%</string>
+    <string name="operations_live_bytes">%1$s — %2$d bytes sent</string>
+    <string name="operations_rate">%1$d bytes/s</string>
+    <string name="operations_outcome_succeeded">Finished.</string>
+    <string name="operations_outcome_failed">Did not go through.</string>
+    <string name="operations_outcome_cancelled">Cancelled.</string>
+    <string name="operations_outcome_unknown">Outcome unknown — this is a result, not a missing one.</string>
+    <string name="operations_outcome_unfinished">Still recorded as running.</string>
+    <string name="operations_boundary">The package started reaching the device (%1$s), so the state of the device is unknown whatever the percentage looked like. Check it.</string>
+    <string name="operations_untouched">Nothing reached the device.</string>
 </resources>

@@ -275,4 +275,22 @@
     <string name="sideload_refused">Ничего не отправлено: %1$s</string>
     <string name="fastboot_fetch_to_file">Прочитать раздел в файл…</string>
     <string name="fastboot_download_file">Загрузить выбранный файл…</string>
+    <string name="operation_channel_name">Идущие операции</string>
+    <string name="operation_channel_description">Показывает идущую передачу, чтобы система не остановила её, пока приложение свёрнуто.</string>
+    <string name="operation_notification_idle">NekoFlash</string>
+    <string name="operation_notification_waiting">Работы нет.</string>
+    <string name="operation_notification_line">%1$s — %2$s</string>
+    <string name="operation_notification_line_percent">%1$s — %2$s, %3$d%%</string>
+    <string name="operations_title">Операции</string>
+    <string name="operations_note">История хранится, чтобы операцию, прерванную гибелью приложения, можно было потом честно прочитать, — а не чтобы её продолжить. Продолжать нечего: транспорт ушёл вместе с процессом.</string>
+    <string name="operations_live_percent">%1$s — %2$d%%</string>
+    <string name="operations_live_bytes">%1$s — отдано %2$d байт</string>
+    <string name="operations_rate">%1$d байт/с</string>
+    <string name="operations_outcome_succeeded">Закончилась.</string>
+    <string name="operations_outcome_failed">Не прошла.</string>
+    <string name="operations_outcome_cancelled">Отменена.</string>
+    <string name="operations_outcome_unknown">Исход неизвестен — это результат, а не его отсутствие.</string>
+    <string name="operations_outcome_unfinished">В записи всё ещё значится идущей.</string>
+    <string name="operations_boundary">Пакет пошёл на устройство (%1$s), поэтому состояние устройства неизвестно, каким бы ни выглядел процент. Проверьте его.</string>
+    <string name="operations_untouched">На устройство не ушло ничего.</string>
 </resources>

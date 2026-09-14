@@ -2,6 +2,8 @@ package io.github.ncorror.nekoflash.adb
 
 import java.io.File
 import io.github.ncorror.nekoflash.core.artifact.ArtifactSink
+import io.github.ncorror.nekoflash.core.model.TargetId
+import io.github.ncorror.nekoflash.operation.OperationEngine
 import io.github.ncorror.nekoflash.core.artifact.ArtifactSource
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
 import io.github.ncorror.nekoflash.core.model.SessionGeneration
@@ -75,6 +77,20 @@ public class AdbLinkController(
      * контроллера. Зачем это нужно — `AdbForwardController.networkPermission`.
      */
     private val networkPermission: () -> String = { "unknown" },
+    /**
+     * Владелец записей длительных операций.
+     *
+     * `null` означает, что записей нет вовсе — так бывает в тестах. Операции от
+     * этого не меняются, меняется только то, останется ли от них след.
+     */
+    private val operations: OperationEngine? = null,
+    /**
+     * Поднять foreground service.
+     *
+     * Функция, а не `Context`: контроллер про Android не знает, и кто именно
+     * держит процесс, решает приложение (`06` §1).
+     */
+    private val holdProcess: () -> Unit = {},
 ) {
     private val mutableState = MutableStateFlow<AdbLinkState>(AdbLinkState.Idle)
 
@@ -114,7 +130,7 @@ public class AdbLinkController(
      * следить за ней должен тот, кто её проходит, а не тот, кто держит
      * транспорт.
      */
-    private val sideloads = AdbSideloadController(executor, diagnostics)
+    private val sideloads = AdbSideloadController(executor, diagnostics, operations, holdProcess)
 
     /**
      * Владелец пробросов портов.
@@ -363,7 +379,8 @@ public class AdbLinkController(
             val live = connection ?: return
             val shown = mutableState.value
             if (shown !is AdbLinkState.Connected || sideloads.active) return
-            sideloads.start(live, shown.peerMode, sizeBytes)
+            val target = targetOf(shown.generation) ?: return
+            sideloads.start(live, shown.peerMode, sizeBytes, target, shown.generation)
         }
 
         /**
@@ -378,7 +395,8 @@ public class AdbLinkController(
             val live = connection ?: return
             val shown = mutableState.value
             if (shown !is AdbLinkState.Connected || sideloads.active) return
-            sideloads.startFrom(live, shown.peerMode, stagingDirectory, origin)
+            val target = targetOf(shown.generation) ?: return
+            sideloads.startFrom(live, shown.peerMode, stagingDirectory, target, shown.generation, origin)
         }
 
         /** Просит отменить передачу. После границы мутации сессия откажет. */
@@ -513,6 +531,16 @@ public class AdbLinkController(
      * больше нет, и оставлять его на экране значило бы приписывать его
      * следующему.
      */
+    /**
+     * Цель этого поколения.
+     *
+     * `null` означает, что сессии больше нет: устройство отключили между
+     * нажатием и этим вызовом. Заводить запись операции на цель, которой нет,
+     * незачем — операция всё равно не начнётся.
+     */
+    private fun targetOf(generation: SessionGeneration): TargetId? =
+        coordinator.sessions.value.firstOrNull { session -> session.generation == generation }?.targetId
+
     private fun forgetConnection() {
         shellSessions.stop()
         // Слушатели переживают отдельную команду, но не транспорт: проброс

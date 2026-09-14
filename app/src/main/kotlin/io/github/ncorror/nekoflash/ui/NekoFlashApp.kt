@@ -71,6 +71,7 @@ fun NekoFlashApp(
     forward: ForwardPanel = ForwardPanel(),
     reverse: ReversePanel = ReversePanel(),
     sideload: SideloadPanel = SideloadPanel(),
+    operations: OperationsPanel = OperationsPanel(),
     fastboot: FastbootPanel = FastbootPanel(),
     fastbootConsole: FastbootConsolePanel = FastbootConsolePanel(),
     terminalActions: TerminalActions = TerminalActions(),
@@ -103,6 +104,7 @@ fun NekoFlashApp(
             forward = forward,
             reverse = reverse,
             sideload = sideload,
+            operations = operations,
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
             onExportDiagnostics = onExportDiagnostics,
@@ -171,6 +173,7 @@ private fun Workspace(
     forward: ForwardPanel,
     reverse: ReversePanel,
     sideload: SideloadPanel,
+    operations: OperationsPanel,
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
     onExportDiagnostics: () -> Unit,
@@ -211,6 +214,7 @@ private fun Workspace(
         )
         ActionsCard(
             exportStatus = exportStatus,
+            operations = operations,
             onRescanUsb = onRescanUsb,
             onExportDiagnostics = onExportDiagnostics,
         )
@@ -288,6 +292,7 @@ private fun SessionList(
 @Composable
 private fun ActionsCard(
     exportStatus: String?,
+    operations: OperationsPanel,
     onRescanUsb: () -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
@@ -309,6 +314,10 @@ private fun ActionsCard(
             if (exportStatus != null) {
                 Text(text = exportStatus, style = MaterialTheme.typography.bodyMedium)
             }
+            // История операций живёт рядом с диагностикой, а не у устройства:
+            // она переживает и отключение, и перезапуск приложения, то есть
+            // относится к приложению, а не к сессии.
+            OperationsSection(panel = operations)
         }
     }
 }

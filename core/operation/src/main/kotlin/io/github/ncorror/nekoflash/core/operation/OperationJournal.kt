@@ -38,7 +38,7 @@ interface OperationJournal {
 }
 
 /** Хранилище в памяти: для тестов и для случая, когда каталог недоступен. */
-class InMemoryOperationJournal : OperationJournal {
+open class InMemoryOperationJournal : OperationJournal {
     private val records = LinkedHashMap<OperationId, OperationRecord>()
 
     override fun save(record: OperationRecord) {

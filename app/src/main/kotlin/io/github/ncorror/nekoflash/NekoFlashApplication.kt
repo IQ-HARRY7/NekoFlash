@@ -16,6 +16,9 @@ import io.github.ncorror.nekoflash.usb.android.AndroidUsbHost
 import io.github.ncorror.nekoflash.usb.api.UsbDiagnosticReport
 import io.github.ncorror.nekoflash.usb.api.UsbPermissionCallbackIdentity
 import io.github.ncorror.nekoflash.usb.api.UsbPermissionPolicy
+import io.github.ncorror.nekoflash.core.operation.FileOperationJournal
+import io.github.ncorror.nekoflash.operation.OperationEngine
+import io.github.ncorror.nekoflash.operation.OperationService
 import io.github.ncorror.nekoflash.usb.api.UsbSessionCoordinator
 import io.github.ncorror.nekoflash.usb.api.UsbSessionState
 import kotlinx.coroutines.CoroutineScope
@@ -104,6 +107,22 @@ public class NekoFlashApplication : Application() {
         Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nekoflash-adb-writer") }
     }
 
+    /**
+     * Владелец длительных операций.
+     *
+     * Живёт на уровне приложения, а не экрана: `06` §1 требует, чтобы
+     * физическое время жизни передачи не принадлежало Activity — пользователь
+     * вправе свернуть приложение посреди прошивки.
+     *
+     * Хранилище — каталог приложения. Записи нужны для истории, evidence и
+     * честного чтения после смерти процесса, а **не** для продолжения
+     * оборванной транзакции: продолжать нечего, транспорт отпущен вместе с
+     * процессом.
+     */
+    public val operations: OperationEngine by lazy {
+        OperationEngine(FileOperationJournal(File(filesDir, OPERATIONS_FOLDER).toPath()))
+    }
+
     /** Состояние ADB-соединения. Экран подписывается на него. */
     public val adbLink: AdbLinkController by lazy {
         AdbLinkController(
@@ -115,6 +134,8 @@ public class NekoFlashApplication : Application() {
             diagnostics = events,
             // Факт, а не догадка: спрашивается у платформы в момент отказа.
             networkPermission = { HostFacts.permissionState(this, Manifest.permission.INTERNET) },
+            operations = operations,
+            holdProcess = { OperationService.start(this) },
         )
     }
 
@@ -161,6 +182,15 @@ public class NekoFlashApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Операции, застигнутые гибелью процесса, читаются и закрываются здесь
+        // — до того, как экран успеет показать их идущими. Продолжения среди
+        // исходов нет: транспорт ушёл вместе с процессом, и «сейчас дожмём»
+        // было бы обещанием того, чего не существует (`06` §3).
+        //
+        // Поколение сессии на этот момент ещё не известно и передаётся как
+        // `null`: устройство не захвачено, а совет «подключите устройство и
+        // проверьте» от этого только точнее.
+        operations.restoreAll(currentGeneration = null)
         usbSessions.start()
         // Соединение ADB живо ровно пока удерживается интерфейс. Наблюдение
         // заведено здесь, а не внутри контроллера: владелец USB живёт на уровне
@@ -172,6 +202,9 @@ public class NekoFlashApplication : Application() {
 
     private companion object {
         /** Каталог ключа ADB внутри приватного хранилища приложения. */
+        /** Каталог записей операций внутри приватного хранилища приложения. */
+        private const val OPERATIONS_FOLDER = "operations"
+
         const val ADB_KEY_FOLDER = "adb"
     }
 
