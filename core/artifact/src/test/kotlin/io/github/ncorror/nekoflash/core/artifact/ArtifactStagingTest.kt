@@ -19,6 +19,7 @@ class ArtifactStagingTest {
             access = ArtifactAccess.NON_SEEKABLE,
             sizeBytes = GIB,
             randomAccessRequired = false,
+            sizeRequiredUpFront = false,
             bytesAvailable = 0L,
         )
 
@@ -28,14 +29,14 @@ class ArtifactStagingTest {
     /** Умеющий источник отдаётся как есть: лишняя копия гигабайта никому не нужна. */
     @Test
     fun aSeekableSourceIsUsedAsItIs() {
-        val decision = ArtifactStaging.decide(ArtifactAccess.SEEKABLE, GIB, true, 0L)
+        val decision = ArtifactStaging.decide(ArtifactAccess.SEEKABLE, GIB, true, false, 0L)
 
         assertTrue(decision is ArtifactStagingDecision.NotNeeded)
     }
 
     @Test
     fun aNonSeekableSourceIsStagedWhenBlocksAreAskedOutOfOrder() {
-        val decision = ArtifactStaging.decide(ArtifactAccess.NON_SEEKABLE, 100L, true, 1_000L)
+        val decision = ArtifactStaging.decide(ArtifactAccess.NON_SEEKABLE, 100L, true, false, 1_000L)
 
         assertEquals(100L, (decision as ArtifactStagingDecision.Required).bytesNeeded)
     }
@@ -48,7 +49,7 @@ class ArtifactStagingTest {
      */
     @Test
     fun anUnknownSourceIsStagedRatherThanTrusted() {
-        val decision = ArtifactStaging.decide(ArtifactAccess.UNKNOWN, 100L, true, 1_000L)
+        val decision = ArtifactStaging.decide(ArtifactAccess.UNKNOWN, 100L, true, false, 1_000L)
 
         val required = decision as ArtifactStagingDecision.Required
         assertTrue(required.reason.contains("не сообщил"))
@@ -62,11 +63,41 @@ class ArtifactStagingTest {
      */
     @Test
     fun thereIsNoRoomIsAnAnswerOfItsOwn() {
-        val decision = ArtifactStaging.decide(ArtifactAccess.NON_SEEKABLE, 1_000L, true, 999L)
+        val decision = ArtifactStaging.decide(ArtifactAccess.NON_SEEKABLE, 1_000L, true, false, 999L)
 
         val noRoom = decision as ArtifactStagingDecision.NoRoom
         assertEquals(1_000L, noRoom.bytesNeeded)
         assertEquals(999L, noRoom.bytesAvailable)
+    }
+
+    /**
+     * Размер, который передача обязана объявить заранее, заставляет стажировать
+     * даже seekable-источник.
+     *
+     * Sideload объявляет объём в самом имени сервиса, и узнать его больше
+     * неоткуда: посчитать можно только прочитав источник целиком.
+     */
+    @Test
+    fun anUnknownSizeForcesStagingEvenOnASeekableSource() {
+        val decision = ArtifactStaging.decide(
+            access = ArtifactAccess.SEEKABLE,
+            sizeBytes = null,
+            randomAccessRequired = false,
+            sizeRequiredUpFront = true,
+            bytesAvailable = 0L,
+        )
+
+        val required = decision as ArtifactStagingDecision.Required
+        assertEquals(ArtifactStaging.UNKNOWN_SIZE, required.bytesNeeded)
+        assertTrue(required.reason.contains("до первого байта"))
+    }
+
+    /** Неизвестный размер не превращается в «места хватит»: проверять нечем. */
+    @Test
+    fun anUnknownSizeIsNotMistakenForEnoughRoom() {
+        val decision = ArtifactStaging.decide(ArtifactAccess.NON_SEEKABLE, null, true, false, 0L)
+
+        assertTrue(decision is ArtifactStagingDecision.Required)
     }
 
     private companion object {

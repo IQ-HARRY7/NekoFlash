@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.lifecycleScope
 import io.github.ncorror.nekoflash.ui.NekoFlashApp
@@ -25,6 +26,8 @@ import io.github.ncorror.nekoflash.ui.FastbootConsolePanel
 import io.github.ncorror.nekoflash.ui.FastbootPanel
 import io.github.ncorror.nekoflash.usb.api.UsbInterfaceKind
 import io.github.ncorror.nekoflash.usb.api.UsbSession
+import io.github.ncorror.nekoflash.artifact.SafArtifactSink
+import io.github.ncorror.nekoflash.artifact.SafArtifactSource
 import io.github.ncorror.nekoflash.ui.FileActions
 import io.github.ncorror.nekoflash.ui.ForwardPanel
 import io.github.ncorror.nekoflash.ui.RawServicePanel
@@ -207,13 +210,59 @@ private fun fastbootConsolePanel(
     onFetch = link::fetchPartition,
 )
 
-private fun fileActions(link: AdbLinkController) = FileActions(
-    onDescribe = link::describeFile,
-    onRead = link::readFile,
-    onWrite = link::writeFile,
-    onRecoveryBaseline = link.recovery::captureBaseline,
-    onRecoveryVerdict = link.recovery::readVerdict,
-)
+/**
+ * Проводка файловых действий, включая два, которым нужен системный диалог.
+ *
+ * Диалог отдаёт `Uri` позже и в другом обратном вызове, чем нажатие кнопки,
+ * поэтому путь на устройстве приходится придержать между ними. Держится он
+ * ровно до возврата из диалога и сбрасывается в любом случае, включая отказ:
+ * иначе следующий выбор файла достался бы прошлой команде.
+ *
+ * Ни источник, ни приёмник здесь не открываются: разговор с чужим провайдером
+ * это ввод-вывод, и на главном потоке он подвесил бы экран. Наружу уходит
+ * функция, которую контроллер вызовет на своём потоке.
+ */
+@Composable
+private fun fileActions(link: AdbLinkController): FileActions {
+    val resolver = LocalContext.current.contentResolver
+    val pendingRead = remember { mutableStateOf<String?>(null) }
+    val pendingWrite = remember { mutableStateOf<String?>(null) }
+
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { destination ->
+        val path = pendingRead.value
+        pendingRead.value = null
+        if (destination != null && path != null) {
+            val shown = path.substringAfterLast('/')
+            link.storage.readTo(path) { SafArtifactSink(resolver, destination, shown) }
+        }
+    }
+
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { chosen ->
+        val path = pendingWrite.value
+        pendingWrite.value = null
+        if (chosen != null && path != null) {
+            link.storage.writeFrom(path) { SafArtifactSource(resolver, chosen) }
+        }
+    }
+
+    return FileActions(
+        onDescribe = link.storage::describe,
+        onRead = link.storage::read,
+        onWrite = link.storage::write,
+        onReadToFile = { path ->
+            pendingRead.value = path
+            saveLauncher.launch(path.substringAfterLast('/').ifBlank { "artifact.bin" })
+        },
+        onWriteFromFile = { path ->
+            pendingWrite.value = path
+            openLauncher.launch(arrayOf("*/*"))
+        },
+        onRecoveryBaseline = link.recovery::captureBaseline,
+        onRecoveryVerdict = link.recovery::readVerdict,
+    )
+}
 
 private fun terminalActions(link: AdbLinkController) = TerminalActions(
     onStart = link::startShell,

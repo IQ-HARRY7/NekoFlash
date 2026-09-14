@@ -6,7 +6,14 @@ sealed interface ArtifactStagingDecision {
     data class NotNeeded(val reason: String) : ArtifactStagingDecision
 
     /** Стажировать, и вот сколько для этого нужно места. */
-    data class Required(val bytesNeeded: Long, val reason: String) : ArtifactStagingDecision
+    data class Required(
+        /**
+         * Сколько понадобится места. [ArtifactStaging.UNKNOWN_SIZE] — неизвестно,
+         * и проверить заранее нечем: узнать размер можно только прочитав.
+         */
+        val bytesNeeded: Long,
+        val reason: String,
+    ) : ArtifactStagingDecision
 
     /**
      * Стажировать нужно, а негде.
@@ -32,6 +39,9 @@ sealed interface ArtifactStagingDecision {
  * границы мутации.
  */
 object ArtifactStaging {
+    /** Размер неизвестен: проверять место заранее нечем. */
+    const val UNKNOWN_SIZE: Long = -1L
+
     /**
      * Нужна ли стажировка.
      *
@@ -44,19 +54,33 @@ object ArtifactStaging {
      */
     fun decide(
         access: ArtifactAccess,
-        sizeBytes: Long,
+        sizeBytes: Long?,
         randomAccessRequired: Boolean,
+        sizeRequiredUpFront: Boolean,
         bytesAvailable: Long,
     ): ArtifactStagingDecision {
-        require(sizeBytes >= 0L) { "размер не может быть отрицательным: $sizeBytes" }
+        require(sizeBytes == null || sizeBytes >= 0L) { "размер не может быть отрицательным: $sizeBytes" }
         require(bytesAvailable >= 0L) { "свободного места не может быть меньше нуля: $bytesAvailable" }
         return when {
+            // Размер, который передача обязана объявить заранее, узнать больше
+            // неоткуда: посчитать его можно только прочитав источник целиком, а
+            // прочитав — глупо выбрасывать прочитанное.
+            sizeBytes == null && sizeRequiredUpFront -> ArtifactStagingDecision.Required(
+                UNKNOWN_SIZE,
+                "провайдер не сообщает размер, а передача обязана объявить его до первого байта",
+            )
+
             !randomAccessRequired -> ArtifactStagingDecision.NotNeeded(
                 "передача читает источник подряд: произвольный доступ не нужен",
             )
 
             access == ArtifactAccess.SEEKABLE -> ArtifactStagingDecision.NotNeeded(
                 "источник умеет читать с произвольного места",
+            )
+
+            sizeBytes == null -> ArtifactStagingDecision.Required(
+                UNKNOWN_SIZE,
+                "провайдер не сообщает ни размера, ни умения читать с произвольного места",
             )
 
             bytesAvailable < sizeBytes -> ArtifactStagingDecision.NoRoom(sizeBytes, bytesAvailable)

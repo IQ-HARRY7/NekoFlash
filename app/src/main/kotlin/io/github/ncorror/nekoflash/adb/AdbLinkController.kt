@@ -1,5 +1,7 @@
 package io.github.ncorror.nekoflash.adb
 
+import io.github.ncorror.nekoflash.core.artifact.ArtifactSink
+import io.github.ncorror.nekoflash.core.artifact.ArtifactSource
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
 import io.github.ncorror.nekoflash.core.model.SessionGeneration
 import io.github.ncorror.nekoflash.protocol.adb.AdbConnection
@@ -261,18 +263,60 @@ public class AdbLinkController(
         reboots.request(live, target)
     }
 
-    /** Спрашивает сведения о пути на устройстве. */
-    public fun describeFile(path: String) {
-        val live = connection ?: return
-        if (fileOperations.active) return
-        fileOperations.describe(live, path)
-    }
+    /**
+     * Работа с файлами устройства — отдельной гранью, а не россыпью методов.
+     *
+     * Их пять, все про один и тот же сервис `sync:` и одно и то же состояние.
+     * Держать их рядом честнее, чем вперемешку с пробросами и перезагрузкой, —
+     * и это же удержало класс под порогом detekt, который поднимать запрещено
+     * (`15` §4.1).
+     */
+    public val storage: StorageActions = StorageActions()
 
-    /** Читает файл целиком, считая размер и отпечаток. */
-    public fun readFile(path: String) {
-        val live = connection ?: return
-        if (fileOperations.active) return
-        fileOperations.read(live, path)
+    /** Проверка пути, чтение, запись — и то же самое через выбор файла. */
+    public inner class StorageActions internal constructor() {
+
+        /** Спрашивает сведения о пути на устройстве. */
+        public fun describe(path: String) {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.describe(live, path)
+        }
+
+        /** Читает файл целиком, считая размер и отпечаток. */
+        public fun read(path: String) {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.read(live, path)
+        }
+
+        /**
+         * Пишет на устройство файл заданного размера из содержимого, порождённого
+         * приложением.
+         *
+         * Размер задаёт вызывающий, а не пользователь: выбор своего файла — работа
+         * artifact source из Phase 8. Два предложенных размера покрывают
+         * аппаратный гейт `07` §6.34, где нужны и малый файл, и файл больше 2 MiB.
+         */
+        public fun write(path: String, sizeBytes: Long) {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.write(live, path, sizeBytes)
+        }
+
+        /** Читает файл устройства в место, выбранное пользователем. */
+        public fun readTo(path: String, destination: () -> ArtifactSink) {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.readTo(live, path, destination)
+        }
+
+        /** Пишет на устройство файл, выбранный пользователем. */
+        public fun writeFrom(path: String, origin: () -> ArtifactSource) {
+            val live = connection ?: return
+            if (fileOperations.active) return
+            fileOperations.writeFrom(live, path, origin)
+        }
     }
 
     /**
@@ -325,20 +369,6 @@ public class AdbLinkController(
         public fun cancelSideload() {
             sideloads.cancel()
         }
-    }
-
-    /**
-     * Пишет на устройство файл заданного размера из содержимого, порождённого
-     * приложением.
-     *
-     * Размер задаёт вызывающий, а не пользователь: выбор своего файла — работа
-     * artifact source из Phase 8. Два предложенных размера покрывают
-     * аппаратный гейт `07` §6.34, где нужны и малый файл, и файл больше 2 MiB.
-     */
-    public fun writeFile(path: String, sizeBytes: Long) {
-        val live = connection ?: return
-        if (fileOperations.active) return
-        fileOperations.write(live, path, sizeBytes)
     }
 
     /**

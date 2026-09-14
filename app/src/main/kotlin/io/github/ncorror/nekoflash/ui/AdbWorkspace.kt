@@ -151,6 +151,10 @@ data class FileActions(
     val onRead: (String) -> Unit = {},
     /** Записать файл заданного размера в байтах. */
     val onWrite: (String, Long) -> Unit = { _, _ -> },
+    /** Прочитать файл устройства в место, которое выберет пользователь. */
+    val onReadToFile: (String) -> Unit = {},
+    /** Записать на устройство файл, который выберет пользователь. */
+    val onWriteFromFile: (String) -> Unit = {},
     /** Снять базу журнала Recovery — до установки. Путь фиксирован. */
     val onRecoveryBaseline: () -> Unit = {},
     /** Прочитать журнал Recovery и объявить вердикт, если его разрешает база. */
@@ -194,6 +198,12 @@ private fun FilesSection(files: AdbFileState, actions: FileActions) {
     }
     Button(onClick = { actions.onRead(path.value) }, enabled = idle && path.value.isNotBlank()) {
         Text(stringResource(R.string.files_read))
+    }
+    Button(onClick = { actions.onReadToFile(path.value) }, enabled = idle && path.value.isNotBlank()) {
+        Text(stringResource(R.string.files_read_to_file))
+    }
+    Button(onClick = { actions.onWriteFromFile(path.value) }, enabled = idle && path.value.isNotBlank()) {
+        Text(stringResource(R.string.files_write_from_file))
     }
     Button(
         onClick = { actions.onWrite(path.value, SMALL_WRITE_BYTES) },
@@ -241,6 +251,38 @@ private fun fileStateText(files: AdbFileState): String = when (files) {
     is AdbFileState.Failed -> stringResource(R.string.files_failed, files.reason)
     is AdbFileState.Described -> describedText(files)
     is AdbFileState.Verdict -> verdictText(files)
+    is AdbFileState.Saved -> savedText(files)
+    is AdbFileState.SaveFailed -> saveFailedText(files)
+    is AdbFileState.SourceChanged -> stringResource(R.string.files_source_changed, files.detail)
+}
+
+/**
+ * Сохранённый файл — и оговорка про атомарную замену.
+ *
+ * Оговорка стоит здесь, а не в справке: у SAF атомарной замены нет, и знать об
+ * этом надо тому, кто прямо сейчас решает, полагаться ли на файл (`06` §7).
+ */
+@Composable
+private fun savedText(state: AdbFileState.Saved): String {
+    val head = stringResource(R.string.files_saved, state.bytes, state.destination, state.sha256)
+    return if (state.atomic) head else head + "\n" + stringResource(R.string.files_saved_not_atomic)
+}
+
+/**
+ * Неудачное сохранение — и главное про него: остался ли файл на месте.
+ *
+ * Недописанный файл там выглядит целым, и это опаснее самой неудачи: заметить
+ * подмену будет уже нечем.
+ */
+@Composable
+private fun saveFailedText(state: AdbFileState.SaveFailed): String {
+    val head = stringResource(R.string.files_save_failed, state.reason)
+    val fate = if (state.destinationRemoved) {
+        R.string.files_save_removed
+    } else {
+        R.string.files_save_left_behind
+    }
+    return head + "\n" + stringResource(fate)
 }
 
 /**

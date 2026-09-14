@@ -23,14 +23,23 @@ enum class ArtifactAccess {
  */
 data class ArtifactIdentity(
     val name: String,
-    val sizeBytes: Long,
+    /**
+     * Размер. `null` — провайдер его не сообщает.
+     *
+     * Такое бывает: `content://` поверх трубы длины не знает. Передача, которой
+     * размер нужен **заранее**, — Sideload объявляет его в самом имени сервиса —
+     * обязана тогда сперва стажировать источник, а не догадываться.
+     */
+    val sizeBytes: Long?,
     val access: ArtifactAccess,
     /** Версия у провайдера, если он её сообщает. */
     val version: String? = null,
 ) {
     init {
         require(name.isNotBlank()) { "имя артефакта не может быть пустым" }
-        require(sizeBytes >= 0L) { "размер артефакта не может быть отрицательным: $sizeBytes" }
+        require(sizeBytes == null || sizeBytes >= 0L) {
+            "размер артефакта не может быть отрицательным: $sizeBytes"
+        }
     }
 }
 

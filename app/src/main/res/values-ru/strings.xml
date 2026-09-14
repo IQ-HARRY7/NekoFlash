@@ -261,4 +261,12 @@
     <string name="sideload_failed">Ничего не отправлено: %1$s (%2$s)</string>
     <string name="sideload_verify">Прочитайте вердикт Recovery: сказать, установилось ли, может только оно.</string>
     <string name="sideload_note">Содержимое порождает приложение — выбор своего пакета появится вместе с artifact source. Остальное настоящее: тот же поток, те же запросы блоков, те же подтверждения. Отмена возможна только до ухода первого блока; после него Recovery уже может менять устройство.</string>
+    <string name="files_read_to_file">Прочитать в файл…</string>
+    <string name="files_write_from_file">Записать файл с этого телефона…</string>
+    <string name="files_saved">Сохранено %1$d байт в %2$s. SHA-256 %3$s</string>
+    <string name="files_saved_not_atomic">У провайдера нет атомарной замены: если что-то пошло не так, проверьте файл, прежде чем на него полагаться.</string>
+    <string name="files_save_failed">Не сохранилось: %1$s</string>
+    <string name="files_save_left_behind">На выбранном месте остался недописанный файл — удалите его сами: он выглядит целым, но целым не является.</string>
+    <string name="files_save_removed">Недописанный файл с выбранного места убран.</string>
+    <string name="files_source_changed">Выбранный файл изменился с момента выбора: %1$s. Выберите его заново.</string>
 </resources>
