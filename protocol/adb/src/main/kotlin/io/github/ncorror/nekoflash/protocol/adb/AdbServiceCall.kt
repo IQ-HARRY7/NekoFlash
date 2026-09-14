@@ -208,6 +208,10 @@ public class AdbServiceCall(
             is AdbMailboxItem.Opened -> opened(item)
             is AdbMailboxItem.Data -> collect(item)
             is AdbMailboxItem.Ended -> finish(item)
+
+            // Подтверждений наших записей этот потребитель не просил:
+            // они приходят только в ящик, открытый с ними.
+            is AdbMailboxItem.Acknowledged -> null
         }
 
         private fun opened(item: AdbMailboxItem.Opened): AdbServiceOutcome? {

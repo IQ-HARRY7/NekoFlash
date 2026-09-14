@@ -215,6 +215,10 @@ internal class AdbSyncExchange(
         }
 
         is AdbMailboxItem.Ended -> ended(item)
+
+        // Подтверждений наших записей этот потребитель не просил:
+        // они приходят только в ящик, открытый с ними.
+        is AdbMailboxItem.Acknowledged -> null
     }
 
     /**

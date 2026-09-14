@@ -38,6 +38,16 @@ public sealed interface AdbMailboxItem {
     /** Данные потока. */
     public data class Data(val payload: ByteArray) : AdbMailboxItem
 
+    /**
+     * Устройство подтвердило **нашу** запись.
+     *
+     * Приходит только в ящик, который об этом просил: см. `acknowledgements` у
+     * [AdbStreamDispatcher.open]. Остальным потокам подтверждения не нужны, а
+     * место в ящике они занимали бы наравне с выводом — и ящик `logcat`
+     * переполнялся бы вдвое быстрее из-за того, чего никто не читает.
+     */
+    public data object Acknowledged : AdbMailboxItem
+
     /** Поток кончился. После этого ящик не принесёт больше ничего. */
     public data class Ended(val reason: AdbMailboxEnd, val detail: String) : AdbMailboxItem
 }
@@ -66,6 +76,14 @@ public class AdbStreamMailbox internal constructor(
     /** Идентификатор потока, которому принадлежит ящик. */
     public val localId: Int,
     private val capacity: Int = DEFAULT_CAPACITY,
+    /**
+     * Просил ли потребитель подтверждения наших записей.
+     *
+     * Признак живёт здесь, а не отдельным списком у диспетчера, намеренно: два
+     * хранилища пришлось бы согласовывать при каждом закрытии, и рассинхрон
+     * означал бы подтверждения в ящике, который их не ждёт.
+     */
+    internal val acknowledgements: Boolean = false,
     private val elapsedNanos: () -> Long = { System.nanoTime() },
 ) {
     init {

@@ -246,4 +246,19 @@
     <string name="recovery_verdict_evidence">Основание: %1$s</string>
     <string name="recovery_baseline">Снять базу журнала Recovery</string>
     <string name="recovery_verdict_read">Прочитать вердикт Recovery</string>
+    <string name="sideload_label">Sideload</string>
+    <string name="sideload_idle">Не начинали.</string>
+    <string name="sideload_running">Подтверждено %1$d%% — %2$d из %3$d блоков, отдано %4$d байт.</string>
+    <string name="sideload_send_small">Отдать малый пакет</string>
+    <string name="sideload_send_large">Отдать большой пакет</string>
+    <string name="sideload_cancel">Отменить передачу</string>
+    <string name="sideload_cancel_gone">Пакет пошёл на устройство: отменять уже нечего.</string>
+    <string name="sideload_transfer_complete">Recovery кончило передачу (DONEDONE). Это значит, что хост отдал всё, и ничего не значит про установку.</string>
+    <string name="sideload_closed_early">Recovery закрыло поток при %1$d%% подтверждённого покрытия. Почти полностью — это не полностью.</string>
+    <string name="sideload_interrupted">Поток оборвался после того, как пакет пошёл на устройство, при %1$d%% подтверждённого покрытия. Состояние устройства неизвестно, каким бы ни выглядел процент.</string>
+    <string name="sideload_cancelled">Отменено до того, как на устройство ушёл хоть один байт пакета.</string>
+    <string name="sideload_not_sideload">Устройство отвечает не из Sideload: %1$s</string>
+    <string name="sideload_failed">Ничего не отправлено: %1$s (%2$s)</string>
+    <string name="sideload_verify">Прочитайте вердикт Recovery: сказать, установилось ли, может только оно.</string>
+    <string name="sideload_note">Содержимое порождает приложение — выбор своего пакета появится вместе с artifact source. Остальное настоящее: тот же поток, те же запросы блоков, те же подтверждения. Отмена возможна только до ухода первого блока; после него Recovery уже может менять устройство.</string>
 </resources>

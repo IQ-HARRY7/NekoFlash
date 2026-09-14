@@ -70,6 +70,7 @@ fun NekoFlashApp(
     rawService: RawServicePanel = RawServicePanel(),
     forward: ForwardPanel = ForwardPanel(),
     reverse: ReversePanel = ReversePanel(),
+    sideload: SideloadPanel = SideloadPanel(),
     fastboot: FastbootPanel = FastbootPanel(),
     fastbootConsole: FastbootConsolePanel = FastbootConsolePanel(),
     terminalActions: TerminalActions = TerminalActions(),
@@ -101,6 +102,7 @@ fun NekoFlashApp(
             rawService = rawService,
             forward = forward,
             reverse = reverse,
+            sideload = sideload,
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
             onExportDiagnostics = onExportDiagnostics,
@@ -168,6 +170,7 @@ private fun Workspace(
     rawService: RawServicePanel,
     forward: ForwardPanel,
     reverse: ReversePanel,
+    sideload: SideloadPanel,
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
     onExportDiagnostics: () -> Unit,
@@ -202,6 +205,7 @@ private fun Workspace(
             rawService = rawService,
             forward = forward,
             reverse = reverse,
+            sideload = sideload,
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
         )
@@ -234,6 +238,7 @@ private fun SessionList(
     rawService: RawServicePanel,
     forward: ForwardPanel,
     reverse: ReversePanel,
+    sideload: SideloadPanel,
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
 ) {
@@ -269,6 +274,7 @@ private fun SessionList(
             rawService = rawService,
             forward = forward,
             reverse = reverse,
+            sideload = sideload,
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
         )
@@ -374,6 +380,7 @@ private fun SessionCard(
     rawService: RawServicePanel,
     forward: ForwardPanel,
     reverse: ReversePanel,
+    sideload: SideloadPanel,
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
 ) {
@@ -411,6 +418,7 @@ private fun SessionCard(
                         rawService = rawService,
                         forward = forward,
                         reverse = reverse,
+                        sideload = sideload,
                     )
                 } else if (session.candidate.kind == UsbInterfaceKind.FASTBOOT) {
                     FastbootLinkSection(fastboot = fastboot)

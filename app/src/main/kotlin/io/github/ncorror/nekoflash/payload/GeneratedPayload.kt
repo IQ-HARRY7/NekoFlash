@@ -30,6 +30,28 @@ internal class GeneratedPayload(private val totalBytes: Long) {
         return count
     }
 
+    /**
+     * Тот же узор, но **с произвольного места**.
+     *
+     * Нужен Sideload: обмен управляется запросами Recovery, и один и тот же
+     * блок оно вправе попросить не раз. Источник, умеющий только «дай
+     * следующее», на повторный запрос отдал бы следующий кусок, и образ уехал
+     * бы перемешанным при исправной с виду передаче.
+     *
+     * Позиция узора считается от абсолютного смещения — той же формулой, что и
+     * в [fill]. Поэтому прочитанное по смещению и прочитанное подряд совпадают
+     * байт в байт, и сверка отпечатков между `push` и Sideload остаётся
+     * осмысленной.
+     */
+    fun read(offset: Long, length: Int): ByteArray {
+        require(offset >= 0L) { "смещение не может быть отрицательным: $offset" }
+        require(length >= 0) { "длина не может быть отрицательной: $length" }
+        require(offset + length <= totalBytes) {
+            "запрошено за пределами содержимого: $offset + $length > $totalBytes"
+        }
+        return ByteArray(length) { index -> ((offset + index) % PATTERN_PERIOD).toByte() }
+    }
+
     private companion object {
         const val PATTERN_PERIOD = 251L
     }

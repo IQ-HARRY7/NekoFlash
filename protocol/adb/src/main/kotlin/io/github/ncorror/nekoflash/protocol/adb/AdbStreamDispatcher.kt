@@ -86,10 +86,25 @@ public class AdbStreamDispatcher(
      *
      * Возвращает ящик и пакет, который надо отправить: отправка принадлежит
      * владельцу транспорта, как и в [AdbStreamRouter.openRequest].
+     *
+     * [acknowledgements] включает доставку [AdbMailboxItem.Acknowledged] — того
+     * самого `OKAY`, которым устройство подтверждает **нашу** запись. По
+     * умолчанию выключено, и это не осторожность ради осторожности: подтверждения
+     * приходят по одному на каждую нашу запись, а ящик ограничен намеренно
+     * (`03` §4). Потоку, который их не читает, они отъедали бы место наравне с
+     * выводом — и `logcat`, и загрузка файла переполняли бы ящик вдвое быстрее
+     * из-за того, чего никто не заказывал.
+     *
+     * Просит их ровно один потребитель — Sideload: он считает покрытие по
+     * **подтверждённым** блокам, и заменить подтверждение отметкой «байты ушли»
+     * значило бы считать своё обещание за ответ устройства.
      */
-    public fun open(service: String): Pair<AdbStreamMailbox, AdbOutboundPacket> = synchronized(lock) {
+    public fun open(
+        service: String,
+        acknowledgements: Boolean = false,
+    ): Pair<AdbStreamMailbox, AdbOutboundPacket> = synchronized(lock) {
         val (localId, packet) = router.openRequest(service)
-        val mailbox = AdbStreamMailbox(localId, mailboxCapacity)
+        val mailbox = AdbStreamMailbox(localId, mailboxCapacity, acknowledgements)
         mailboxes[localId] = mailbox
         mailbox to packet
     }
@@ -184,6 +199,16 @@ public class AdbStreamDispatcher(
 
             is AdbStreamEvent.Data ->
                 put(event.localId, AdbMailboxItem.Data(event.payload), outbound)
+
+            /*
+             * Подтверждение нашей записи доходит только до того, кто его
+             * просил. Молча класть его всем значило бы тратить ограниченный
+             * ящик на то, чего потребитель не читает.
+             */
+            is AdbStreamEvent.Acknowledged ->
+                if (mailboxes[event.localId]?.acknowledgements == true) {
+                    put(event.localId, AdbMailboxItem.Acknowledged, outbound)
+                }
 
             is AdbStreamEvent.Closed -> {
                 mailboxes.remove(event.localId)?.end(event.reason.toEnd(), "device closed the stream")

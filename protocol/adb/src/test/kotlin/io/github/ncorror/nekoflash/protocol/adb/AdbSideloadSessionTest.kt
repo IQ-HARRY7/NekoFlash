@@ -93,10 +93,10 @@ class AdbSideloadSessionTest {
     fun theCounterNeverReachesAHundredBeforeDoneDone() {
         val session = opened(total = BLOCK.toLong())
 
-        val step = deliver(session, block = 0)
+        val progress = deliver(session, block = 0).progress!!
 
-        assertEquals(BLOCK.toLong(), step.progress!!.uniqueBytes)
-        assertEquals("покрытие полное, а передача — нет", 99, step.progress!!.percent)
+        assertEquals(BLOCK.toLong(), progress.uniqueBytes)
+        assertEquals("покрытие полное, а передача — нет", 99, progress.percent)
     }
 
     /** Блок `-1` — конец запросов, а не ошибка. */

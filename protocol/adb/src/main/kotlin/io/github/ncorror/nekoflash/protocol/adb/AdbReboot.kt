@@ -296,6 +296,10 @@ public class AdbReboot(
         }
 
         is AdbMailboxItem.Ended -> ended(service, item, said)
+
+        // Подтверждений наших записей этот потребитель не просил:
+        // они приходят только в ящик, открытый с ними.
+        is AdbMailboxItem.Acknowledged -> null
     }
 
     private fun ended(

@@ -30,6 +30,7 @@ import io.github.ncorror.nekoflash.ui.ForwardPanel
 import io.github.ncorror.nekoflash.ui.RawServicePanel
 import io.github.ncorror.nekoflash.ui.RebootPanel
 import io.github.ncorror.nekoflash.ui.ReversePanel
+import io.github.ncorror.nekoflash.ui.SideloadPanel
 import io.github.ncorror.nekoflash.ui.TerminalActions
 import io.github.ncorror.nekoflash.ui.theme.NekoFlashTheme
 import io.github.ncorror.nekoflash.usb.api.UsbClaimResult
@@ -97,6 +98,7 @@ class MainActivity : ComponentActivity() {
                     rawService = rawServicePanel(adbLink),
                     forward = forwardPanel(adbLink),
                     reverse = reversePanel(adbLink),
+                    sideload = sideloadPanel(adbLink),
                     fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
                     fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
                     onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },
@@ -118,6 +120,14 @@ private fun rebootPanel(adbLink: AdbLinkController): RebootPanel = RebootPanel(
 private fun rawServicePanel(adbLink: AdbLinkController): RawServicePanel = RawServicePanel(
     state = adbLink.rawService.collectAsState().value,
     onCall = adbLink::callRawService,
+)
+
+/** То же для передачи пакета в Recovery. */
+@Composable
+private fun sideloadPanel(adbLink: AdbLinkController): SideloadPanel = SideloadPanel(
+    state = adbLink.sideload.collectAsState().value,
+    onSend = adbLink.recovery::sideload,
+    onCancel = adbLink.recovery::cancelSideload,
 )
 
 /** То же для пробросов портов. */

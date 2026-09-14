@@ -52,6 +52,7 @@ internal fun AdbLinkSection(
     rawService: RawServicePanel,
     forward: ForwardPanel,
     reverse: ReversePanel,
+    sideload: SideloadPanel,
 ) {
     val linkForThisSession = adbLink.takeIf { it.generationOrNull() == session.generation }
     val connected = linkForThisSession is AdbLinkState.Connected
@@ -88,6 +89,11 @@ internal fun AdbLinkSection(
         ShellSection(command = adbCommand, onRunCommand = onRunCommand)
         TerminalSection(terminal = terminal, actions = terminalActions)
         FilesSection(files = files, actions = fileActions)
+        // Sideload стоит сразу за файлами не по алфавиту: база журнала
+        // снимается там, вердикт читается там же, а между ними — эта передача.
+        // Три шага одного дела, и разносить их по экрану значило бы заставить
+        // оператора искать второй и третий.
+        SideloadSection(panel = sideload)
         RebootSection(panel = reboot)
         RawServiceSection(panel = rawService)
         ForwardSection(panel = forward)

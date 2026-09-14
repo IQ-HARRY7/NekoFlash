@@ -37,6 +37,21 @@ public sealed interface AdbStreamEvent {
     /** Данные потока. */
     public data class Data(val localId: Int, val payload: ByteArray) : AdbStreamEvent
 
+    /**
+     * Устройство подтвердило **нашу** запись и готово принимать дальше.
+     *
+     * Раньше это событие никуда не выходило: `OKAY` открытого потока — сугубо
+     * управление потоком, и потребителю от него ничего не нужно. Оказалось,
+     * что нужно ровно одному: Sideload считает покрытие по **подтверждённым**
+     * блокам, а подтверждение — это оно и есть. Заменить его отметкой «байты
+     * ушли» нельзя: она говорит про нас, а не про устройство.
+     *
+     * Событие рождается всегда, а до потребителя доходит только если тот его
+     * просил ([AdbStreamDispatcher.open]). Остальные потоки не должны платить
+     * местом в ящике за то, чего не заказывали.
+     */
+    public data class Acknowledged(val localId: Int) : AdbStreamEvent
+
     /** Поток закончился. */
     public data class Closed(val localId: Int, val reason: AdbStreamClosure) : AdbStreamEvent
 
@@ -230,7 +245,7 @@ public class AdbStreamRouter {
         stream.remoteId = packet.arg0
         if (stream.opened) {
             // Подтверждение нашей записи: устройство готово принимать дальше.
-            return AdbRouterStep()
+            return AdbRouterStep(events = listOf(AdbStreamEvent.Acknowledged(packet.arg1)))
         }
         stream.opened = true
         return AdbRouterStep(

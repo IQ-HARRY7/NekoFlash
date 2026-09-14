@@ -183,6 +183,10 @@ public class AdbForwardStream(
                 is AdbMailboxItem.Opened -> null
                 is AdbMailboxItem.Data -> deliver(item.payload)
                 is AdbMailboxItem.Ended -> finish(endOf(item.reason), item.detail)
+
+                // Подтверждений наших записей этот потребитель не просил:
+                // они приходят только в ящик, открытый с ними.
+                is AdbMailboxItem.Acknowledged -> null
             }
         }
         return ended

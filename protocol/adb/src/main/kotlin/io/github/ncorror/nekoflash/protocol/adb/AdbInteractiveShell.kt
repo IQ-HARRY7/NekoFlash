@@ -227,6 +227,10 @@ public class AdbInteractiveShell(
         }
 
         is AdbMailboxItem.Ended -> applyEnd(item, events)
+
+        // Подтверждений наших записей этот потребитель не просил:
+        // они приходят только в ящик, открытый с ними.
+        is AdbMailboxItem.Acknowledged -> null
     }
 
     private fun appendLegacyText(

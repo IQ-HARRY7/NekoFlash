@@ -287,6 +287,56 @@ class AdbStreamDispatcherTest {
         assertEquals("tcp:8080", sink.snapshot().single().fields["service"])
     }
 
+    /**
+     * Подтверждение нашей записи доходит до того, кто его просил.
+     *
+     * Sideload считает покрытие по **подтверждённым** блокам, и без этого
+     * события посчитать их нечем: отметка «байты ушли» говорит про нас, а не
+     * про устройство.
+     */
+    @Test
+    fun anAcknowledgementReachesTheStreamThatAskedForIt() {
+        val dispatcher = AdbStreamDispatcher()
+        val (mailbox, open) = dispatcher.open("sideload-host:1:65536", acknowledgements = true)
+        dispatcher.dispatch(okay(remote = 7, local = open.arg0))
+        mailbox.poll(0)
+
+        dispatcher.dispatch(okay(remote = 7, local = open.arg0))
+
+        assertEquals(AdbMailboxItem.Acknowledged, mailbox.poll(0))
+    }
+
+    /**
+     * Тот, кто не просил, подтверждений не получает.
+     *
+     * Это не вежливость: ящик ограничен намеренно (`03` §4), и подтверждения
+     * занимали бы в нём место наравне с выводом. Поток `logcat` переполнялся бы
+     * вдвое быстрее из-за того, чего никто не читает.
+     */
+    @Test
+    fun aStreamThatDidNotAskGetsNoAcknowledgements() {
+        val dispatcher = AdbStreamDispatcher()
+        val (mailbox, open) = dispatcher.open("shell:logcat")
+        dispatcher.dispatch(okay(remote = 7, local = open.arg0))
+        mailbox.poll(0)
+
+        dispatcher.dispatch(okay(remote = 7, local = open.arg0))
+
+        assertNull("подтверждения приходят только по просьбе", mailbox.poll(0))
+    }
+
+    /** Подтверждение не путается с открытием: первый `OKAY` остаётся открытием. */
+    @Test
+    fun theOpeningConfirmationStaysAnOpening() {
+        val dispatcher = AdbStreamDispatcher()
+        val (mailbox, open) = dispatcher.open("sideload-host:1:65536", acknowledgements = true)
+
+        dispatcher.dispatch(okay(remote = 7, local = open.arg0))
+
+        assertEquals(AdbMailboxItem.Opened(7), mailbox.poll(0))
+        assertNull(mailbox.poll(0))
+    }
+
     private companion object {
         fun okay(remote: Int, local: Int) = AdbPacket(AdbCommand.OKAY, remote, local, ByteArray(0))
 

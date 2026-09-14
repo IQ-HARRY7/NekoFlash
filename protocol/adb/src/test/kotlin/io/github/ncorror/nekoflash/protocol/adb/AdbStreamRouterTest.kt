@@ -215,14 +215,36 @@ class AdbStreamRouterTest {
         )
     }
 
+    /**
+     * `OKAY` открытого потока — подтверждение **нашей** записи, и оно называется.
+     *
+     * Отвечать на него нечем, поэтому пакетов не появляется. А вот событие
+     * появляется: Sideload считает покрытие по подтверждённым блокам, и заменить
+     * подтверждение отметкой «байты ушли» значило бы выдать своё обещание за
+     * ответ устройства. Открытым потоком это событие остаётся ровно потому, что
+     * дальше диспетчер отдаёт его только тому, кто просил.
+     */
     @Test
-    fun okayOnAnAlreadyOpenStreamIsAWriteAcknowledgementAndProducesNothing() {
+    fun okayOnAnAlreadyOpenStreamIsNamedAsAWriteAcknowledgement() {
         val opened = openedStream()
 
         val step = opened.router.onPacket(packet(AdbCommand.OKAY, arg0 = REMOTE_ID, arg1 = opened.localId))
 
-        assertTrue(step.outbound.isEmpty())
-        assertTrue(step.events.isEmpty())
+        assertTrue("отвечать на подтверждение нечем", step.outbound.isEmpty())
+        assertEquals(
+            AdbStreamEvent.Acknowledged(opened.localId),
+            step.events.single(),
+        )
+    }
+
+    /** Повторное открытие подтверждением не притворяется: `Opened` ровно один. */
+    @Test
+    fun theOpeningConfirmationIsNotReportedAsAWriteAcknowledgement() {
+        val opened = openedStream()
+
+        val again = opened.router.onPacket(packet(AdbCommand.OKAY, arg0 = REMOTE_ID, arg1 = opened.localId))
+
+        assertTrue(again.events.none { it is AdbStreamEvent.Opened })
     }
 
     @Test

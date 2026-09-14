@@ -1,5 +1,6 @@
 package io.github.ncorror.nekoflash.protocol.adb
 
+import io.github.ncorror.nekoflash.usb.api.UsbTransportHandle
 import org.junit.Assert.assertTrue
 import kotlin.concurrent.thread
 
@@ -20,8 +21,8 @@ import kotlin.concurrent.thread
  * очереди крутится без пауз, и брошенные потоки съели бы процессор ещё до
  * середины сюиты. За этим следит [AdbDispatchHarnesses].
  */
-internal class AdbDispatchHarness(
-    val handle: FakeUsbTransportHandle,
+internal class AdbDispatchHarness<H : UsbTransportHandle>(
+    val handle: H,
     maxPayload: Int = AdbInboundFraming.MODERN_MAX_PAYLOAD_BYTES,
 ) {
     val writer: AdbPacketWriter = AdbPacketWriter(handle)
@@ -38,7 +39,7 @@ internal class AdbDispatchHarness(
         loop.run()
     }
 
-    fun start(): AdbDispatchHarness {
+    fun start(): AdbDispatchHarness<H> {
         worker.start()
         return this
     }
@@ -65,13 +66,16 @@ internal class AdbDispatchHarness(
  * бы за собой крутящийся поток.
  */
 internal class AdbDispatchHarnesses {
-    private val started = mutableListOf<AdbDispatchHarness>()
+    private val started = mutableListOf<AdbDispatchHarness<*>>()
 
-    fun start(handle: FakeUsbTransportHandle, maxPayload: Int = AdbInboundFraming.MODERN_MAX_PAYLOAD_BYTES): AdbDispatchHarness =
+    fun <H : UsbTransportHandle> start(
+        handle: H,
+        maxPayload: Int = AdbInboundFraming.MODERN_MAX_PAYLOAD_BYTES,
+    ): AdbDispatchHarness<H> =
         AdbDispatchHarness(handle, maxPayload).start().also { harness -> started += harness }
 
     fun stopAll() {
-        started.forEach(AdbDispatchHarness::stop)
+        started.forEach(AdbDispatchHarness<*>::stop)
         started.clear()
     }
 }

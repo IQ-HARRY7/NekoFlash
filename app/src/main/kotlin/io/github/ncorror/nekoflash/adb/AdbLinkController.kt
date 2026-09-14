@@ -104,6 +104,16 @@ public class AdbLinkController(
     private val rawServices = AdbRawServiceController(executor)
 
     /**
+     * Владелец передачи пакета в Recovery.
+     *
+     * Отдельный класс по той же причине, что и остальные, и ещё по одной: у
+     * передачи есть необратимая граница, после которой отмены не существует, и
+     * следить за ней должен тот, кто её проходит, а не тот, кто держит
+     * транспорт.
+     */
+    private val sideloads = AdbSideloadController(executor, diagnostics)
+
+    /**
      * Владелец пробросов портов.
      *
      * Отдельный класс по той же причине, что и остальные, и ещё по одной: у
@@ -154,6 +164,9 @@ public class AdbLinkController(
 
     /** Состояние последней файловой операции. */
     public val files: StateFlow<AdbFileState> = fileOperations.state
+
+    /** Состояние передачи пакета в Recovery. */
+    public val sideload: StateFlow<AdbSideloadState> = sideloads.state
 
     /** Состояние последнего запроса перезагрузки. */
     public val reboot: StateFlow<AdbRebootState> = reboots.state
@@ -291,6 +304,26 @@ public class AdbLinkController(
             val live = connection ?: return
             if (fileOperations.active) return
             fileOperations.readRecoveryVerdict(live)
+        }
+
+        /**
+         * Отдаёт пакет Recovery.
+         *
+         * Режим peer'а берётся из состояния связи, а не угадывается: он прочитан
+         * из баннера при рукопожатии. Отказ из-за режима называет драйвер, а не
+         * прячет эта кнопка, — тогда на прогоне видно, **что** ответило
+         * устройство, а не только что мы решили не спрашивать.
+         */
+        public fun sideload(sizeBytes: Long) {
+            val live = connection ?: return
+            val shown = mutableState.value
+            if (shown !is AdbLinkState.Connected || sideloads.active) return
+            sideloads.start(live, shown.peerMode, sizeBytes)
+        }
+
+        /** Просит отменить передачу. После границы мутации сессия откажет. */
+        public fun cancelSideload() {
+            sideloads.cancel()
         }
     }
 

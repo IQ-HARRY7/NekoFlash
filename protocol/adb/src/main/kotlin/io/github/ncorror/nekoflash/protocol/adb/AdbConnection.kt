@@ -277,6 +277,21 @@ public class AdbConnection(
     }
 
     /**
+     * Драйвер Sideload.
+     *
+     * Живёт от передачи до передачи, как и сессия `sync:`: держать его между
+     * ними незачем, а открытый поток занимал бы место в диспетчере.
+     */
+    public fun sideloadDriver(diagnostics: DiagnosticSink = DiagnosticSink { }): AdbSideloadDriver {
+        ensureDispatching()
+        return AdbSideloadDriver(
+            writer = writer,
+            dispatcher = dispatcher,
+            diagnostics = diagnostics,
+        )
+    }
+
+    /**
      * Запросы обратного проброса.
      *
      * Сами запросы — обычные сервисы, а вот соединения по ним приходят
