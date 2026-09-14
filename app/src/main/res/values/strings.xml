@@ -311,4 +311,5 @@
     <string name="welcome_usb_title">How the phone sees your device</string>
     <string name="welcome_usb_body">Android hands a USB device to one app at a time, and only after you allow it. So NekoFlash first asks the system what is plugged in, then asks you for permission, then holds the interface until you release it. If the list stays empty, the system is not offering the device to any app — that is the phone speaking, not NekoFlash refusing.</string>
     <string name="welcome_continue">Continue</string>
+    <string name="shell_history">Recent commands — tapping one fills the field, it does not send it</string>
 </resources>

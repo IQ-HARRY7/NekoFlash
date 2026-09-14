@@ -5,6 +5,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -696,12 +697,39 @@ private fun AdbRebootState.Running.service(): String =
  * поток. Гасит кнопку только предыдущая незаконченная команда — на экране один
  * слот результата.
  */
+/**
+ * Недавние команды под полем ввода.
+ *
+ * Нажатие **подставляет** команду в поле, а не отправляет её. Разница
+ * существенная: в этом поле бывают и мутирующие команды, и отправка по
+ * случайному касанию была бы тем самым действием без подтверждения, которого
+ * здесь быть не должно.
+ */
+@Composable
+private fun CommandHistoryRow(entries: List<String>, enabled: Boolean, onPick: (String) -> Unit) {
+    if (entries.isEmpty()) return
+    Text(
+        text = stringResource(R.string.shell_history),
+        style = MaterialTheme.typography.labelMedium,
+    )
+    entries.forEach { entry ->
+        TextButton(onClick = { onPick(entry) }, enabled = enabled) {
+            Text(entry)
+        }
+    }
+}
+
 @Composable
 private fun ShellSection(
     command: AdbCommandState,
     onRunCommand: (String) -> Unit,
 ) {
     val input = remember { mutableStateOf("") }
+    val history = remember { CommandHistory() }
+    // Список перерисовывается по счётчику, а не по самой истории: она
+    // изменяемая, и Compose о её правках не узнаёт. Счётчик — то, что меняется
+    // при каждой отправке, и этого достаточно.
+    val remembered = remember { mutableStateOf(0) }
     val running = command is AdbCommandState.Running
 
     OutlinedTextField(
@@ -714,11 +742,57 @@ private fun ShellSection(
         modifier = Modifier.fillMaxWidth(),
     )
     Button(
-        onClick = { onRunCommand(input.value) },
+        onClick = {
+            history.add(input.value)
+            remembered.value += 1
+            onRunCommand(input.value)
+        },
         enabled = !running && input.value.isNotBlank(),
     ) {
         Text(stringResource(R.string.shell_run))
     }
+    CommandHistoryRow(
+        entries = remember(remembered.value) { history.entries() },
+        enabled = !running,
+        onPick = { chosen -> input.value = chosen },
+    )
+    ShellOutcome(command)
+
+}
+
+private fun AdbLinkState.generationOrNull(): SessionGeneration? = when (this) {
+    AdbLinkState.Idle -> null
+    is AdbLinkState.Connecting -> generation
+    is AdbLinkState.WaitingForAuthorization -> generation
+    is AdbLinkState.Connected -> generation
+    is AdbLinkState.Failed -> generation
+}
+
+@Composable
+private fun adbLinkText(state: AdbLinkState?): String = when (state) {
+    null, AdbLinkState.Idle -> stringResource(R.string.adb_state_idle)
+    is AdbLinkState.Connecting -> stringResource(R.string.adb_state_connecting)
+    is AdbLinkState.WaitingForAuthorization -> stringResource(R.string.adb_state_waiting)
+    is AdbLinkState.Connected ->
+        stringResource(R.string.adb_state_connected, localizedPeerMode(state.peerMode))
+
+    is AdbLinkState.Failed ->
+        stringResource(R.string.adb_state_failed, state.reason.name, state.detail)
+}
+
+@Composable
+private fun localizedPeerMode(mode: AdbPeerMode): String = stringResource(
+    when (mode) {
+        AdbPeerMode.DEVICE -> R.string.peer_mode_device
+        AdbPeerMode.RECOVERY -> R.string.peer_mode_recovery
+        AdbPeerMode.SIDELOAD -> R.string.peer_mode_sideload
+        AdbPeerMode.UNKNOWN -> R.string.peer_mode_unknown
+    },
+)
+
+/** Исход разовой команды: идёт, кончилась, не вышла. */
+@Composable
+private fun ShellOutcome(command: AdbCommandState) {
     when (command) {
         AdbCommandState.None -> Unit
         is AdbCommandState.Running -> LabelledValue(
@@ -754,33 +828,3 @@ private fun ShellSection(
         style = MaterialTheme.typography.bodySmall,
     )
 }
-
-private fun AdbLinkState.generationOrNull(): SessionGeneration? = when (this) {
-    AdbLinkState.Idle -> null
-    is AdbLinkState.Connecting -> generation
-    is AdbLinkState.WaitingForAuthorization -> generation
-    is AdbLinkState.Connected -> generation
-    is AdbLinkState.Failed -> generation
-}
-
-@Composable
-private fun adbLinkText(state: AdbLinkState?): String = when (state) {
-    null, AdbLinkState.Idle -> stringResource(R.string.adb_state_idle)
-    is AdbLinkState.Connecting -> stringResource(R.string.adb_state_connecting)
-    is AdbLinkState.WaitingForAuthorization -> stringResource(R.string.adb_state_waiting)
-    is AdbLinkState.Connected ->
-        stringResource(R.string.adb_state_connected, localizedPeerMode(state.peerMode))
-
-    is AdbLinkState.Failed ->
-        stringResource(R.string.adb_state_failed, state.reason.name, state.detail)
-}
-
-@Composable
-private fun localizedPeerMode(mode: AdbPeerMode): String = stringResource(
-    when (mode) {
-        AdbPeerMode.DEVICE -> R.string.peer_mode_device
-        AdbPeerMode.RECOVERY -> R.string.peer_mode_recovery
-        AdbPeerMode.SIDELOAD -> R.string.peer_mode_sideload
-        AdbPeerMode.UNKNOWN -> R.string.peer_mode_unknown
-    },
-)
