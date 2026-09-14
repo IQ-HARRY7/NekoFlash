@@ -41,8 +41,6 @@ internal fun AdbLinkSection(
     session: UsbSession,
     adbLink: AdbLinkState,
     adbCommand: AdbCommandState,
-    terminal: AdbTerminalState,
-    terminalActions: TerminalActions,
     files: AdbFileState,
     fileActions: FileActions,
     onAdbConnect: () -> Unit,
@@ -87,7 +85,9 @@ internal fun AdbLinkSection(
     )
     if (connected) {
         ShellSection(command = adbCommand, onRunCommand = onRunCommand)
-        TerminalSection(terminal = terminal, actions = terminalActions)
+        // Интерактивная оболочка живёт в своём разделе: она переживает
+        // отдельную команду, и листать до неё через все протокольные секции
+        // приходилось каждый раз.
         FilesSection(files = files, actions = fileActions)
         // Sideload стоит сразу за файлами не по алфавиту: база журнала
         // снимается там, вердикт читается там же, а между ними — эта передача.
@@ -361,7 +361,7 @@ data class TerminalActions(
  * блокируют UI.
  */
 @Composable
-private fun TerminalSection(terminal: AdbTerminalState, actions: TerminalActions) {
+internal fun TerminalSection(terminal: AdbTerminalState, actions: TerminalActions) {
     val input = remember { mutableStateOf("") }
 
     LabelledValue(

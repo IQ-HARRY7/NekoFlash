@@ -290,4 +290,5 @@
     <string name="operations_outcome_unfinished">Still recorded as running.</string>
     <string name="operations_boundary">The package started reaching the device (%1$s), so the state of the device is unknown whatever the percentage looked like. Check it.</string>
     <string name="operations_untouched">Nothing reached the device.</string>
+    <string name="terminal_needs_connection">Connect to a device over ADB first — the shell runs on it, not here.</string>
 </resources>

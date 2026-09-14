@@ -293,4 +293,5 @@
     <string name="operations_outcome_unfinished">В записи всё ещё значится идущей.</string>
     <string name="operations_boundary">Пакет пошёл на устройство (%1$s), поэтому состояние устройства неизвестно, каким бы ни выглядел процент. Проверьте его.</string>
     <string name="operations_untouched">На устройство не ушло ничего.</string>
+    <string name="terminal_needs_connection">Сперва подключитесь к устройству по ADB: оболочка идёт на нём, а не здесь.</string>
 </resources>

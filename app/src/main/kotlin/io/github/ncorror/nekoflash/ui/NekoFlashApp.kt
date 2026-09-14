@@ -19,6 +19,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -81,7 +85,7 @@ fun NekoFlashApp(
     // Рабочая область одинакова в обеих раскладках и отличается только тем,
     // как занимает место. Список аргументов длинный, и два его экземпляра уже
     // однажды разъехались, поэтому он существует в одном месте.
-    val workspace: @Composable (Modifier) -> Unit = { modifier ->
+    val workspace: @Composable (Modifier, WorkspaceDestination) -> Unit = { modifier, shown ->
         Workspace(
             sessions = sessions,
             scan = scan,
@@ -108,47 +112,66 @@ fun NekoFlashApp(
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
             onExportDiagnostics = onExportDiagnostics,
+            destination = shown,
             modifier = modifier,
         )
     }
 
+    // Выбранный раздел живёт здесь, а не в контроллере: это состояние взгляда,
+    // а не состояние устройства. Поворот экрана его сохраняет, перезапуск — нет,
+    // и это правильно: после перезапуска оператор смотрит на устройство.
+    var destination by rememberSaveable { mutableStateOf(WorkspaceDestination.DEVICE) }
+
     Scaffold(topBar = { NekoFlashTopBar() }) { innerPadding ->
-        BoxWithConstraints(
+        WorkspaceLayout(
+            destination = destination,
+            onSelect = { chosen -> destination = chosen },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-        ) {
-            if (maxWidth >= 840.dp) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    ProjectNavigation(
-                        modifier = Modifier
-                            .width(240.dp)
-                            .fillMaxSize(),
-                    )
-                    workspace(Modifier.weight(1f))
-                }
-            } else {
-                workspace(Modifier.fillMaxSize())
+            workspace = workspace,
+        )
+    }
+}
+
+/**
+ * Раскладка: навигация сбоку на широком экране и сверху на узком.
+ *
+ * Порог один и тот же для обоих: на 840 dp вертикальный список перестаёт
+ * отъедать заметную долю ширины, а до него он съедал бы её у самой работы.
+ */
+@Composable
+private fun WorkspaceLayout(
+    destination: WorkspaceDestination,
+    onSelect: (WorkspaceDestination) -> Unit,
+    modifier: Modifier,
+    workspace: @Composable (Modifier, WorkspaceDestination) -> Unit,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        if (maxWidth >= WIDE_SCREEN) {
+            Row(modifier = Modifier.fillMaxSize()) {
+                DestinationRail(
+                    current = destination,
+                    onSelect = onSelect,
+                    modifier = Modifier
+                        .width(RAIL_WIDTH)
+                        .fillMaxSize(),
+                )
+                workspace(Modifier.weight(1f), destination)
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize()) {
+                DestinationTabs(current = destination, onSelect = onSelect)
+                workspace(Modifier.weight(1f), destination)
             }
         }
     }
 }
 
-@Composable
-private fun ProjectNavigation(modifier: Modifier = Modifier) {
-    Surface(modifier = modifier) {
-        Column(
-            modifier = Modifier.padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(stringResource(R.string.nav_workspace), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.nav_device))
-            Text(stringResource(R.string.nav_terminal))
-            Text(stringResource(R.string.nav_operations))
-            Text(stringResource(R.string.nav_diagnostics))
-        }
-    }
-}
+/** С этой ширины навигация переезжает вбок: сверху она отъедала бы высоту у работы. */
+private val WIDE_SCREEN = 840.dp
+
+private val RAIL_WIDTH = 240.dp
 
 @Composable
 private fun Workspace(
@@ -177,6 +200,7 @@ private fun Workspace(
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
     onExportDiagnostics: () -> Unit,
+    destination: WorkspaceDestination,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -185,18 +209,28 @@ private fun Workspace(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text(
-            text = stringResource(R.string.sessions_title),
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        when (destination) {
+            WorkspaceDestination.DEVICE -> Text(
+                text = stringResource(R.string.sessions_title),
+                style = MaterialTheme.typography.headlineMedium,
+            )
+
+            WorkspaceDestination.TERMINAL -> TerminalWorkspace(adbLink, terminal, terminalActions)
+            WorkspaceDestination.OPERATIONS -> OperationsSection(panel = operations)
+            WorkspaceDestination.DIAGNOSTICS -> DiagnosticsWorkspace(
+                exportStatus = exportStatus,
+                onRescanUsb = onRescanUsb,
+                onExportDiagnostics = onExportDiagnostics,
+            )
+        }
+        if (destination != WorkspaceDestination.DEVICE) return@Column
+
         SessionList(
             sessions = sessions,
             scan = scan,
             usbHostSupported = usbHostSupported,
             adbLink = adbLink,
             adbCommand = adbCommand,
-            terminal = terminal,
-            terminalActions = terminalActions,
             files = files,
             fileActions = fileActions,
             onClaim = onClaim,
@@ -212,14 +246,55 @@ private fun Workspace(
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
         )
-        ActionsCard(
-            exportStatus = exportStatus,
-            operations = operations,
-            onRescanUsb = onRescanUsb,
-            onExportDiagnostics = onExportDiagnostics,
-        )
-        BuildBaselineCard()
     }
+}
+
+/**
+ * Терминал отдельным разделом.
+ *
+ * Он переехал из карточки устройства не ради симметрии: оболочка живёт дольше
+ * одной команды, и листать до неё через все протокольные секции приходилось
+ * каждый раз. Здесь она открывается сразу.
+ */
+@Composable
+private fun TerminalWorkspace(
+    adbLink: AdbLinkState,
+    terminal: AdbTerminalState,
+    actions: TerminalActions,
+) {
+    Text(
+        text = stringResource(R.string.nav_terminal),
+        style = MaterialTheme.typography.headlineMedium,
+    )
+    if (adbLink is AdbLinkState.Connected) {
+        TerminalSection(terminal = terminal, actions = actions)
+    } else {
+        // Не «кнопка погасла», а сказано, чего не хватает: пустой экран без
+        // объяснения читается как поломка.
+        Text(
+            text = stringResource(R.string.terminal_needs_connection),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/** Диагностика и то, что к ней относится: пересканировать, выгрузить, сверить сборку. */
+@Composable
+private fun DiagnosticsWorkspace(
+    exportStatus: String?,
+    onRescanUsb: () -> Unit,
+    onExportDiagnostics: () -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.nav_diagnostics),
+        style = MaterialTheme.typography.headlineMedium,
+    )
+    ActionsCard(
+        exportStatus = exportStatus,
+        onRescanUsb = onRescanUsb,
+        onExportDiagnostics = onExportDiagnostics,
+    )
+    BuildBaselineCard()
 }
 
 @Composable
@@ -229,8 +304,6 @@ private fun SessionList(
     usbHostSupported: Boolean,
     adbLink: AdbLinkState,
     adbCommand: AdbCommandState,
-    terminal: AdbTerminalState,
-    terminalActions: TerminalActions,
     files: AdbFileState,
     fileActions: FileActions,
     onClaim: (UsbSession) -> Unit,
@@ -265,8 +338,6 @@ private fun SessionList(
             session = session,
             adbLink = adbLink,
             adbCommand = adbCommand,
-            terminal = terminal,
-            terminalActions = terminalActions,
             files = files,
             fileActions = fileActions,
             onClaim = { onClaim(session) },
@@ -292,7 +363,6 @@ private fun SessionList(
 @Composable
 private fun ActionsCard(
     exportStatus: String?,
-    operations: OperationsPanel,
     onRescanUsb: () -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
@@ -314,10 +384,6 @@ private fun ActionsCard(
             if (exportStatus != null) {
                 Text(text = exportStatus, style = MaterialTheme.typography.bodyMedium)
             }
-            // История операций живёт рядом с диагностикой, а не у устройства:
-            // она переживает и отключение, и перезапуск приложения, то есть
-            // относится к приложению, а не к сессии.
-            OperationsSection(panel = operations)
         }
     }
 }
@@ -376,8 +442,6 @@ private fun SessionCard(
     session: UsbSession,
     adbLink: AdbLinkState,
     adbCommand: AdbCommandState,
-    terminal: AdbTerminalState,
-    terminalActions: TerminalActions,
     files: AdbFileState,
     fileActions: FileActions,
     onClaim: () -> Unit,
@@ -416,8 +480,6 @@ private fun SessionCard(
                         session = session,
                         adbLink = adbLink,
                         adbCommand = adbCommand,
-                        terminal = terminal,
-                        terminalActions = terminalActions,
                         files = files,
                         fileActions = fileActions,
                         onAdbConnect = onAdbConnect,
