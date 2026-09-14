@@ -312,4 +312,7 @@
     <string name="welcome_usb_body">Android hands a USB device to one app at a time, and only after you allow it. So NekoFlash first asks the system what is plugged in, then asks you for permission, then holds the interface until you release it. If the list stays empty, the system is not offering the device to any app — that is the phone speaking, not NekoFlash refusing.</string>
     <string name="welcome_continue">Continue</string>
     <string name="shell_history">Recent commands — tapping one fills the field, it does not send it</string>
+    <string name="diagnostics_recent_title">Being recorded right now</string>
+    <string name="diagnostics_recent_empty">Nothing recorded yet in this session.</string>
+    <string name="diagnostics_recent_note">The last %1$d lines, newest first. The full report is the export above — this pane is here so you can see during a run whether the thing you are testing is being recorded at all.</string>
 </resources>

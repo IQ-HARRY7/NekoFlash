@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import io.github.ncorror.nekoflash.ui.NekoFlashApp
 import io.github.ncorror.nekoflash.ui.OperationsPanel
 import io.github.ncorror.nekoflash.ui.PaletteAction
+import io.github.ncorror.nekoflash.ui.RecentEvents
 import io.github.ncorror.nekoflash.adb.AdbLinkController
 import io.github.ncorror.nekoflash.fastboot.FastbootConsoleState
 import io.github.ncorror.nekoflash.fastboot.FastbootLinkController
@@ -164,6 +165,7 @@ class MainActivity : ComponentActivity() {
                 onExport = saveLauncher::launch,
                 application = application,
             ),
+            recentEvents = RecentEvents { application.recentDiagnostics() },
             fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
             fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
             onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },

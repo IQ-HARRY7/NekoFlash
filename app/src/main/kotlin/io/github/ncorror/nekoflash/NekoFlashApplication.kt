@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticBundle
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticBundleResult
+import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticEvent
 import io.github.ncorror.nekoflash.core.diagnostics.InMemoryDiagnosticSink
 import io.github.ncorror.nekoflash.core.model.SessionGeneration
 import io.github.ncorror.nekoflash.adb.AdbLinkController
@@ -61,6 +62,16 @@ public class NekoFlashApplication : Application() {
     }
 
     private val events = InMemoryDiagnosticSink()
+
+    /**
+     * Недавние события для экрана.
+     *
+     * Отдаётся снимком по запросу, а не потоком: журнал потока не даёт, а
+     * заводить его пришлось бы с ограничением частоты — `logcat` даёт тысячи
+     * событий в секунду, и публикация на каждое утопила бы экран ровно тем,
+     * что он показывает. Спрашивает экран, и только пока панель открыта.
+     */
+    public val recentDiagnostics: () -> List<DiagnosticEvent> = { events.snapshot() }
 
     /** Состояние сессий USB. Экран подписывается на него и ничего не опрашивает. */
     public val usbSessions: UsbSessionCoordinator by lazy {

@@ -77,6 +77,7 @@ fun NekoFlashApp(
     sideload: SideloadPanel = SideloadPanel(),
     operations: OperationsPanel = OperationsPanel(),
     paletteActions: List<PaletteAction> = emptyList(),
+    recentEvents: RecentEvents = RecentEvents { emptyList() },
     fastboot: FastbootPanel = FastbootPanel(),
     fastbootConsole: FastbootConsolePanel = FastbootConsolePanel(),
     terminalActions: TerminalActions = TerminalActions(),
@@ -111,6 +112,7 @@ fun NekoFlashApp(
             sideload = sideload,
             operations = operations,
             paletteActions = paletteActions,
+            recentEvents = recentEvents,
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
             onExportDiagnostics = onExportDiagnostics,
@@ -200,6 +202,7 @@ private fun Workspace(
     sideload: SideloadPanel,
     operations: OperationsPanel,
     paletteActions: List<PaletteAction>,
+    recentEvents: RecentEvents,
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
     onExportDiagnostics: () -> Unit,
@@ -227,6 +230,7 @@ private fun Workspace(
             WorkspaceDestination.OPERATIONS -> OperationsSection(panel = operations)
             WorkspaceDestination.DIAGNOSTICS -> DiagnosticsWorkspace(
                 exportStatus = exportStatus,
+                recentEvents = recentEvents,
                 onRescanUsb = onRescanUsb,
                 onExportDiagnostics = onExportDiagnostics,
             )
@@ -290,6 +294,7 @@ private fun TerminalWorkspace(
 @Composable
 private fun DiagnosticsWorkspace(
     exportStatus: String?,
+    recentEvents: RecentEvents,
     onRescanUsb: () -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
@@ -302,6 +307,7 @@ private fun DiagnosticsWorkspace(
         onRescanUsb = onRescanUsb,
         onExportDiagnostics = onExportDiagnostics,
     )
+    DiagnosticsPane(source = recentEvents)
     BuildBaselineCard()
 }
 
