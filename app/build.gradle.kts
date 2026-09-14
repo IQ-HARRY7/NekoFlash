@@ -84,6 +84,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:diagnostics"))
     implementation(project(":core:operation"))
+    implementation(project(":core:artifact"))
     implementation(project(":usb:api"))
     implementation(project(":usb:android"))
     implementation(project(":protocol:adb"))

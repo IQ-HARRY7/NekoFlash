@@ -1,7 +1,7 @@
 package io.github.ncorror.nekoflash.payload
 
+import io.github.ncorror.nekoflash.core.artifact.ArtifactDigest
 import java.io.OutputStream
-import java.security.MessageDigest
 
 /**
  * Приёмник, который считает байты и отпечаток, но не хранит содержимое.
@@ -20,26 +20,20 @@ import java.security.MessageDigest
  * устойчив, и ничего не говорит о том, что именно лежит в разделе.
  */
 internal class DigestingSink : OutputStream() {
-    private val digest = MessageDigest.getInstance(ALGORITHM)
+    private val digest = ArtifactDigest()
 
     /** Сколько байт принято. */
-    var bytes: Long = 0L
-        private set
+    val bytes: Long
+        get() = digest.bytes
 
     override fun write(value: Int) {
-        digest.update(value.toByte())
-        bytes += 1
+        digest.update(byteArrayOf(value.toByte()))
     }
 
     override fun write(source: ByteArray, offset: Int, length: Int) {
         digest.update(source, offset, length)
-        bytes += length
     }
 
-    /** Отпечаток принятого. Вызывать один раз: `MessageDigest` после этого сбрасывается. */
-    fun sha256(): String = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
-
-    private companion object {
-        const val ALGORITHM = "SHA-256"
-    }
+    /** Отпечаток принятого. Спросить можно не закрывая счёт. */
+    fun sha256(): String = digest.hex()
 }

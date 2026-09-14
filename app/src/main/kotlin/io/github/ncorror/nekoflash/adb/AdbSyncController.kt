@@ -1,5 +1,6 @@
 package io.github.ncorror.nekoflash.adb
 
+import io.github.ncorror.nekoflash.core.artifact.ArtifactDigest
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
 import io.github.ncorror.nekoflash.payload.GeneratedPayload
 import io.github.ncorror.nekoflash.protocol.adb.AdbConnection
@@ -15,7 +16,6 @@ import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryLog
 import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryResult
 import io.github.ncorror.nekoflash.protocol.adb.AdbRecoveryVerdict
 import io.github.ncorror.nekoflash.protocol.adb.AdbSyncStat
-import java.security.MessageDigest
 import java.util.concurrent.Executor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -140,12 +140,12 @@ public class AdbSyncController(
      */
     public fun read(connection: AdbConnection, path: String) {
         start(connection, path) { session, target ->
-            val digest = MessageDigest.getInstance("SHA-256")
+            val digest = ArtifactDigest()
             when (val outcome = session.receive(target) { chunk -> digest.update(chunk) }) {
                 is AdbSyncOutcome.Done -> AdbFileState.Read(
                     path = target,
                     bytes = outcome.value,
-                    sha256 = digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) },
+                    sha256 = digest.hex(),
                 )
 
                 is AdbSyncOutcome.Failed -> failed(target, outcome)
