@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,9 +17,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import io.github.ncorror.nekoflash.ui.NekoFlashApp
 import io.github.ncorror.nekoflash.ui.OperationsPanel
+import io.github.ncorror.nekoflash.ui.PaletteAction
 import io.github.ncorror.nekoflash.adb.AdbLinkController
 import io.github.ncorror.nekoflash.fastboot.FastbootConsoleState
 import io.github.ncorror.nekoflash.fastboot.FastbootLinkController
@@ -55,60 +60,94 @@ class MainActivity : ComponentActivity() {
         val adbLink = application.adbLink
         val fastbootLink = application.fastbootLink
 
-        setContent {
-            val sessions by coordinator.sessions.collectAsState()
-            val linkState by adbLink.state.collectAsState()
-            val scan by coordinator.lastScan.collectAsState()
-            val commandState by adbLink.command.collectAsState()
-            val terminalState by adbLink.terminal.collectAsState()
-            val fileState by adbLink.files.collectAsState()
-            val fastbootState by fastbootLink.state.collectAsState()
-            val fastbootConsole by fastbootLink.console.collectAsState()
-            var exportStatus by remember { mutableStateOf<String?>(null) }
+        setContent { NekoFlashScreen(application, coordinator, adbLink, fastbootLink) }
+    }
 
-            val savedTemplate = stringResource(R.string.diagnostics_export_done)
-            val failedTemplate = stringResource(R.string.diagnostics_export_failed)
-            val claimFailedTemplate = stringResource(R.string.usb_claim_failed)
+    /**
+     * Дерево экрана целиком.
+     *
+     * Вынесено из `onCreate` не ради слоёв: `onCreate` перешёл порог detekt в
+     * 60 строк, а поднимать пороги запрещено (`15` §4.1). Граница вышла
+     * осмысленная — выше неё только владение процессом, ниже только экран.
+     */
+    @Composable
+    private fun NekoFlashScreen(
+        application: NekoFlashApplication,
+        coordinator: UsbSessionCoordinator,
+        adbLink: AdbLinkController,
+        fastbootLink: FastbootLinkController,
+    ) {
+        val sessions by coordinator.sessions.collectAsState()
+        val linkState by adbLink.state.collectAsState()
+        val scan by coordinator.lastScan.collectAsState()
+        val commandState by adbLink.command.collectAsState()
+        val terminalState by adbLink.terminal.collectAsState()
+        val fileState by adbLink.files.collectAsState()
+        val fastbootState by fastbootLink.state.collectAsState()
+        val fastbootConsole by fastbootLink.console.collectAsState()
+        var exportStatus by remember { mutableStateOf<String?>(null) }
 
-            // Системный диалог сохранения: файл создаёт пользователь там, где
-            // ему нужно, а приложение не заводит собственного хранилища отчётов.
-            val saveLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.CreateDocument("application/zip"),
-            ) { destination ->
-                exportDiagnostics(application, destination, savedTemplate, failedTemplate) { message ->
-                    exportStatus = message
-                }
+        val savedTemplate = stringResource(R.string.diagnostics_export_done)
+        val failedTemplate = stringResource(R.string.diagnostics_export_failed)
+        val claimFailedTemplate = stringResource(R.string.usb_claim_failed)
+
+        // Системный диалог сохранения: файл создаёт пользователь там, где
+        // ему нужно, а приложение не заводит собственного хранилища отчётов.
+        val saveLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/zip"),
+        ) { destination ->
+            exportDiagnostics(application, destination, savedTemplate, failedTemplate) { message ->
+                exportStatus = message
             }
+        }
 
-            NekoFlashTheme {
-                NekoFlashApp(
-                    sessions = sessions,
-                    scan = scan,
-                    usbHostSupported = packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST),
-                    exportStatus = exportStatus,
-                    adbLink = linkState,
-                    adbCommand = commandState,
-                    terminal = terminalState,
-                    terminalActions = terminalActions(adbLink),
-                    files = fileState,
-                    fileActions = fileActions(adbLink),
-                    onRescanUsb = { coordinator.scanAttachedDevices() },
-                    onClaim = claimAction(coordinator, claimFailedTemplate) { exportStatus = it },
-                    onRelease = { session -> coordinator.release(session.generation) },
-                    onAdbConnect = { session -> adbLink.connect(session.generation) },
-                    onAdbDisconnect = { session -> adbLink.disconnect(session.generation) },
-                    onRunCommand = adbLink::runCommand,
-                    reboot = rebootPanel(adbLink),
-                    rawService = rawServicePanel(adbLink),
-                    forward = forwardPanel(adbLink),
-                    reverse = reversePanel(adbLink),
-                    sideload = sideloadPanel(adbLink),
-                    operations = operationsPanel(application),
-                    fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
-                    fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
-                    onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },
-                )
-            }
+        // Скан при каждом возвращении на экран.
+        //
+        // Закрывает открытый вопрос `07` §6.22: приложение сканировало при
+        // старте и по кнопке, и если система перечислила устройство позже,
+        // не прислав `USB_DEVICE_ATTACHED` — например, пока приложение не
+        // работало, — узнать об этом можно было только кнопкой.
+        //
+        // Тот конкретный случай из §6.22 это **не** закрывает, и там так и
+        // написано: ручной скан тогда дал ноль. Закрывается другой,
+        // соседний: устройство подключили при свёрнутом приложении.
+        RescanOnResume(coordinator)
+
+        NekoFlashTheme {
+            NekoFlashApp(
+                sessions = sessions,
+                scan = scan,
+                usbHostSupported = packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST),
+                exportStatus = exportStatus,
+                adbLink = linkState,
+                adbCommand = commandState,
+                terminal = terminalState,
+                terminalActions = terminalActions(adbLink),
+                files = fileState,
+                fileActions = fileActions(adbLink),
+                onRescanUsb = { coordinator.scanAttachedDevices() },
+                onClaim = claimAction(coordinator, claimFailedTemplate) { exportStatus = it },
+                onRelease = { session -> coordinator.release(session.generation) },
+                onAdbConnect = { session -> adbLink.connect(session.generation) },
+                onAdbDisconnect = { session -> adbLink.disconnect(session.generation) },
+                onRunCommand = adbLink::runCommand,
+                reboot = rebootPanel(adbLink),
+                rawService = rawServicePanel(adbLink),
+                forward = forwardPanel(adbLink),
+                reverse = reversePanel(adbLink),
+                sideload = sideloadPanel(adbLink),
+                operations = operationsPanel(application),
+                paletteActions = paletteActions(
+                    adbLink = adbLink,
+                    fastbootLink = fastbootLink,
+                    coordinator = coordinator,
+                    onExport = saveLauncher::launch,
+                    application = application,
+                ),
+                fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
+                fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
+                onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },
+            )
         }
     }
 }
@@ -124,6 +163,95 @@ private fun operationsPanel(application: NekoFlashApplication): OperationsPanel 
     live = application.operations.live.collectAsState().value,
     history = application.operations.history.collectAsState().value,
 )
+
+/**
+ * Пересканирует USB при каждом возвращении на экран.
+ *
+ * Скан дешёвый: он спрашивает у системы список и ничего не захватывает. Делать
+ * его по расписанию было бы хуже — шум в диагностике без нового знания, — а по
+ * возвращению он приходится ровно на тот момент, когда пользователь и мог
+ * что-то воткнуть.
+ */
+@Composable
+private fun RescanOnResume(coordinator: UsbSessionCoordinator) {
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) coordinator.scanAttachedDevices()
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+}
+
+/**
+ * Набор действий для палитры.
+ *
+ * Сюда попадают только действия **без набираемого аргумента**: путь к файлу,
+ * имя раздела и текст команды набираются в своих полях, и дублировать их в
+ * поиске значило бы завести второе место, где то же самое вводится иначе.
+ *
+ * Ничего нового палитра не добавляет и ничего не прячет: каждое действие здесь
+ * есть и на своей карточке. Это второй путь к тому же — для того, кто помнит
+ * название и не хочет листать.
+ */
+@Composable
+private fun paletteActions(
+    adbLink: AdbLinkController,
+    fastbootLink: FastbootLinkController,
+    coordinator: UsbSessionCoordinator,
+    onExport: (String) -> Unit,
+    application: NekoFlashApplication,
+): List<PaletteAction> = listOf(
+    PaletteAction(stringResource(R.string.action_rescan), "usb scan скан устройства") {
+        coordinator.scanAttachedDevices()
+    },
+    PaletteAction(stringResource(R.string.action_export), "diagnostics отчёт логи bundle") {
+        onExport(application.suggestedDiagnosticsFileName())
+    },
+    PaletteAction(stringResource(R.string.action_recovery_baseline), "baseline база журнал log") {
+        adbLink.recovery.captureBaseline()
+    },
+    PaletteAction(stringResource(R.string.action_recovery_verdict), "verdict вердикт install исход") {
+        adbLink.recovery.readVerdict()
+    },
+    PaletteAction(stringResource(R.string.action_sideload_small), "sideload пакет малый small") {
+        adbLink.recovery.sideload(SMALL_PACKAGE_BYTES)
+    },
+    PaletteAction(stringResource(R.string.action_sideload_large), "sideload пакет большой large") {
+        adbLink.recovery.sideload(LARGE_PACKAGE_BYTES)
+    },
+    PaletteAction(stringResource(R.string.action_reboot_system), "reboot перезагрузка система") {
+        adbLink.requestReboot("")
+    },
+    PaletteAction(stringResource(R.string.action_reboot_bootloader), "reboot bootloader загрузчик") {
+        adbLink.requestReboot("bootloader")
+    },
+    PaletteAction(stringResource(R.string.action_reboot_recovery), "reboot recovery рекавери") {
+        adbLink.requestReboot("recovery")
+    },
+    PaletteAction(stringResource(R.string.action_reboot_sideload), "reboot sideload сайдлоад") {
+        adbLink.requestReboot("sideload")
+    },
+    PaletteAction(stringResource(R.string.action_fastboot_getvar_all), "getvar all переменные") {
+        fastbootLink.readAllVariables()
+    },
+    PaletteAction(stringResource(R.string.action_fastboot_reboot_bootloader), "fastboot reboot загрузчик") {
+        fastbootLink.runCommand("reboot-bootloader")
+    },
+    PaletteAction(stringResource(R.string.action_fastboot_reboot_fastbootd), "fastbootd userspace") {
+        fastbootLink.runCommand("reboot fastboot")
+    },
+)
+
+/**
+ * Размеры пакетов для палитры — те же, что на кнопках Sideload.
+ *
+ * Держатся рядом с палитрой, а не переиспользуются из панели: там они приватны,
+ * и открывать их наружу ради двух строк значило бы расширить чужой контракт.
+ */
+private const val SMALL_PACKAGE_BYTES = 64L * 1024L
+private const val LARGE_PACKAGE_BYTES = 16L * 1024L * 1024L
 
 /** Проводка панели перезагрузки: состояние экрана и действие контроллера. */
 @Composable

@@ -291,4 +291,20 @@
     <string name="operations_boundary">The package started reaching the device (%1$s), so the state of the device is unknown whatever the percentage looked like. Check it.</string>
     <string name="operations_untouched">Nothing reached the device.</string>
     <string name="terminal_needs_connection">Connect to a device over ADB first — the shell runs on it, not here.</string>
+    <string name="palette_label">Find an action</string>
+    <string name="palette_hint">%1$d actions. Type a few letters of the one you want.</string>
+    <string name="palette_nothing">Nothing matches “%1$s”. Every action is still on its own card below.</string>
+    <string name="action_rescan">Rescan USB</string>
+    <string name="action_export">Export diagnostics</string>
+    <string name="action_recovery_baseline">Capture the Recovery log baseline</string>
+    <string name="action_recovery_verdict">Read the Recovery verdict</string>
+    <string name="action_sideload_small">Sideload a small package</string>
+    <string name="action_sideload_large">Sideload a large package</string>
+    <string name="action_reboot_system">Reboot into the system</string>
+    <string name="action_reboot_bootloader">Reboot into the bootloader</string>
+    <string name="action_reboot_recovery">Reboot into Recovery</string>
+    <string name="action_reboot_sideload">Reboot into Sideload</string>
+    <string name="action_fastboot_getvar_all">Fastboot: ask for every variable</string>
+    <string name="action_fastboot_reboot_bootloader">Fastboot: reboot into the bootloader</string>
+    <string name="action_fastboot_reboot_fastbootd">Fastboot: reboot into fastbootd</string>
 </resources>

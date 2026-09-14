@@ -294,4 +294,20 @@
     <string name="operations_boundary">Пакет пошёл на устройство (%1$s), поэтому состояние устройства неизвестно, каким бы ни выглядел процент. Проверьте его.</string>
     <string name="operations_untouched">На устройство не ушло ничего.</string>
     <string name="terminal_needs_connection">Сперва подключитесь к устройству по ADB: оболочка идёт на нём, а не здесь.</string>
+    <string name="palette_label">Найти действие</string>
+    <string name="palette_hint">Действий: %1$d. Наберите несколько букв нужного.</string>
+    <string name="palette_nothing">По запросу «%1$s» ничего нет. Все действия по-прежнему на своих карточках ниже.</string>
+    <string name="action_rescan">Пересканировать USB</string>
+    <string name="action_export">Выгрузить диагностику</string>
+    <string name="action_recovery_baseline">Снять базу журнала Recovery</string>
+    <string name="action_recovery_verdict">Прочитать вердикт Recovery</string>
+    <string name="action_sideload_small">Отдать малый пакет</string>
+    <string name="action_sideload_large">Отдать большой пакет</string>
+    <string name="action_reboot_system">Перезагрузить в систему</string>
+    <string name="action_reboot_bootloader">Перезагрузить в загрузчик</string>
+    <string name="action_reboot_recovery">Перезагрузить в Recovery</string>
+    <string name="action_reboot_sideload">Перезагрузить в Sideload</string>
+    <string name="action_fastboot_getvar_all">Fastboot: спросить все переменные</string>
+    <string name="action_fastboot_reboot_bootloader">Fastboot: перезагрузить в загрузчик</string>
+    <string name="action_fastboot_reboot_fastbootd">Fastboot: перезагрузить в fastbootd</string>
 </resources>

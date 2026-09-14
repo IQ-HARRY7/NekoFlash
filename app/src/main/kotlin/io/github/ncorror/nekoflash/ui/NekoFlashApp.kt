@@ -76,6 +76,7 @@ fun NekoFlashApp(
     reverse: ReversePanel = ReversePanel(),
     sideload: SideloadPanel = SideloadPanel(),
     operations: OperationsPanel = OperationsPanel(),
+    paletteActions: List<PaletteAction> = emptyList(),
     fastboot: FastbootPanel = FastbootPanel(),
     fastbootConsole: FastbootConsolePanel = FastbootConsolePanel(),
     terminalActions: TerminalActions = TerminalActions(),
@@ -109,6 +110,7 @@ fun NekoFlashApp(
             reverse = reverse,
             sideload = sideload,
             operations = operations,
+            paletteActions = paletteActions,
             fastboot = fastboot,
             fastbootConsole = fastbootConsole,
             onExportDiagnostics = onExportDiagnostics,
@@ -197,6 +199,7 @@ private fun Workspace(
     reverse: ReversePanel,
     sideload: SideloadPanel,
     operations: OperationsPanel,
+    paletteActions: List<PaletteAction>,
     fastboot: FastbootPanel,
     fastbootConsole: FastbootConsolePanel,
     onExportDiagnostics: () -> Unit,
@@ -210,10 +213,15 @@ private fun Workspace(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         when (destination) {
-            WorkspaceDestination.DEVICE -> Text(
-                text = stringResource(R.string.sessions_title),
-                style = MaterialTheme.typography.headlineMedium,
-            )
+            WorkspaceDestination.DEVICE -> {
+                Text(
+                    text = stringResource(R.string.sessions_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                // Палитра стоит над списком, а не под ним: она существует
+                // ровно затем, чтобы до знакомого действия не листать.
+                CommandPalette(actions = paletteActions)
+            }
 
             WorkspaceDestination.TERMINAL -> TerminalWorkspace(adbLink, terminal, terminalActions)
             WorkspaceDestination.OPERATIONS -> OperationsSection(panel = operations)
