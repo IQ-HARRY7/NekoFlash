@@ -1,6 +1,10 @@
 package io.github.ncorror.nekoflash.fastboot
 
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticEvent
+import io.github.ncorror.nekoflash.core.artifact.ArtifactSink
+import io.github.ncorror.nekoflash.core.artifact.ArtifactSource
+import io.github.ncorror.nekoflash.core.artifact.ArtifactWriteOutcome
+import io.github.ncorror.nekoflash.core.artifact.ArtifactWriter
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
 import io.github.ncorror.nekoflash.core.model.SessionGeneration
 import io.github.ncorror.nekoflash.protocol.fastboot.FastbootGetVar
@@ -265,6 +269,50 @@ public class FastbootLinkController(
     }
 
     /**
+     * Загружает в буфер устройства **выбранный пользователем** файл.
+     *
+     * Произвольный доступ здесь не нужен: фаза данных Fastboot читает источник
+     * подряд, и стажировать поэтому нечего — этим `download:` и отличается от
+     * Sideload, где Recovery просит блоки в своём порядке.
+     *
+     * Размер обязан быть известен заранее: он объявляется в самой команде
+     * восемью шестнадцатеричными цифрами. Источник, длины которого провайдер не
+     * сообщает, поэтому отвергается **до** первого байта, а не на середине.
+     *
+     * **Ничего не прошивает**, как и [downloadGenerated].
+     */
+    public fun downloadFrom(origin: () -> ArtifactSource) {
+        busy("fastboot_download_file", "выбранный файл") { lane, _ ->
+            val source = origin()
+            val size = source.identity.sizeBytes
+            if (size == null) {
+                FastbootConsoleState.NotAnswered(
+                    command = "download:",
+                    detail = "провайдер не сообщает размер файла, " +
+                        "а download: обязан объявить его до первого байта",
+                    lane = lane.state,
+                )
+            } else {
+                source.open().use { stream ->
+                    downloaded(size, FastbootDownload(lane).send(stream, size), lane.state)
+                }
+            }
+        }
+    }
+
+    /** Читает раздел в место, выбранное пользователем. */
+    public fun fetchPartitionTo(partition: String, destination: () -> ArtifactSink) {
+        busy("fastboot_fetch_file", partition) { lane, name ->
+            val sink = destination()
+            val writer = ArtifactWriter(sink)
+            val outcome = FastbootFetch(lane, FastbootGetVar(lane)).fetch(name, WriterStream(writer))
+            saved(name, writer, outcome, lane.state)
+        }
+    }
+
+    /** Приёмник Fastboot говорит на `OutputStream`; запись артефакта — на кусках. */
+
+    /**
      * Читает раздел с устройства — фаза DATA IN.
      *
      * Содержимое нигде не собирается: приёмник считает байты и отпечаток, как
@@ -282,76 +330,6 @@ public class FastbootLinkController(
                 .fetch(name, sink)
             fetched(name, sink, outcome, lane.state)
         }
-    }
-
-    private fun fetched(
-        partition: String,
-        sink: DigestingSink,
-        outcome: FastbootFetchOutcome,
-        lane: FastbootLaneState,
-    ): FastbootConsoleState {
-        val complete = outcome is FastbootFetchOutcome.Completed
-        val detail = when (outcome) {
-            is FastbootFetchOutcome.Completed -> "кусков: ${outcome.chunks}"
-            is FastbootFetchOutcome.Refused -> outcome.detail
-            is FastbootFetchOutcome.Partial -> outcome.detail
-            is FastbootFetchOutcome.NotStarted -> outcome.detail
-        }
-        return FastbootConsoleState.Fetched(
-            partition = partition,
-            bytes = sink.bytes,
-            sha256 = if (sink.bytes > 0L) sink.sha256() else "",
-            complete = complete,
-            detail = detail,
-            lane = lane,
-        )
-    }
-
-    private fun downloaded(
-        declared: Long,
-        outcome: FastbootDownloadOutcome,
-        lane: FastbootLaneState,
-    ): FastbootConsoleState = when (outcome) {
-        is FastbootDownloadOutcome.Answered -> FastbootConsoleState.Downloaded(
-            declaredBytes = declared,
-            sentBytes = outcome.bytesSent,
-            reply = outcome.reply,
-            detail = outcome.payload,
-            // Байты дошли все, но принял ли их приёмник — сказало устройство.
-            // Про «не изменилось» речи нет: буфер наполнен.
-            untouched = false,
-            lane = lane,
-        )
-
-        // Единственный исход, про который можно честно сказать, что состояние
-        // устройства не тронуто: ни одного байта не ушло.
-        is FastbootDownloadOutcome.Refused -> FastbootConsoleState.Downloaded(
-            declaredBytes = declared,
-            sentBytes = 0L,
-            reply = FastbootReply.FAIL,
-            detail = outcome.detail,
-            untouched = true,
-            lane = lane,
-        )
-
-        is FastbootDownloadOutcome.Unknown -> FastbootConsoleState.Downloaded(
-            declaredBytes = outcome.expectedBytes,
-            sentBytes = outcome.bytesSent,
-            reply = null,
-            detail = outcome.detail,
-            untouched = false,
-            lane = lane,
-        )
-
-        // Обмен не начался: команда не ушла, устройство её не видело.
-        is FastbootDownloadOutcome.NotStarted -> FastbootConsoleState.Downloaded(
-            declaredBytes = declared,
-            sentBytes = 0L,
-            reply = null,
-            detail = outcome.detail,
-            untouched = true,
-            lane = lane,
-        )
     }
 
     /**

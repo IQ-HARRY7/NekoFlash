@@ -14,6 +14,8 @@ data class SideloadPanel(
     val state: AdbSideloadState = AdbSideloadState.None,
     /** Отдать пакет заданного размера в байтах. */
     val onSend: (Long) -> Unit = {},
+    /** Отдать пакет, который выберет пользователь. */
+    val onChoose: () -> Unit = {},
     val onCancel: () -> Unit = {},
 )
 
@@ -44,14 +46,20 @@ private const val LARGE_PACKAGE_BYTES = 16L * 1024L * 1024L
 internal fun SideloadSection(panel: SideloadPanel) {
     val state = panel.state
     val running = state as? AdbSideloadState.Running
+    // Копирование занимает экран так же, как передача, но устройство при этом
+    // не тронуто: кнопки гасит и то, и другое, а формулировки у них разные.
+    val busy = running != null || state is AdbSideloadState.Staging
 
     LabelledValue(label = stringResource(R.string.sideload_label), value = sideloadText(state))
 
-    Button(onClick = { panel.onSend(SMALL_PACKAGE_BYTES) }, enabled = running == null) {
+    Button(onClick = { panel.onSend(SMALL_PACKAGE_BYTES) }, enabled = !busy) {
         Text(stringResource(R.string.sideload_send_small))
     }
-    Button(onClick = { panel.onSend(LARGE_PACKAGE_BYTES) }, enabled = running == null) {
+    Button(onClick = { panel.onSend(LARGE_PACKAGE_BYTES) }, enabled = !busy) {
         Text(stringResource(R.string.sideload_send_large))
+    }
+    Button(onClick = panel.onChoose, enabled = !busy) {
+        Text(stringResource(R.string.sideload_choose))
     }
     if (running != null) {
         SideloadCancel(running, panel.onCancel)
@@ -95,6 +103,12 @@ private fun sideloadText(state: AdbSideloadState): String = when (state) {
     )
 
     is AdbSideloadState.Finished -> finishedText(state)
+
+    is AdbSideloadState.Staging ->
+        stringResource(R.string.sideload_staging, state.bytes, state.name) + "\n" +
+            stringResource(R.string.sideload_staging_note)
+
+    is AdbSideloadState.Refused -> stringResource(R.string.sideload_refused, state.detail)
 }
 
 /**

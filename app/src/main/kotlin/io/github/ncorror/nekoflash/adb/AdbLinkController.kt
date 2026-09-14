@@ -1,5 +1,6 @@
 package io.github.ncorror.nekoflash.adb
 
+import java.io.File
 import io.github.ncorror.nekoflash.core.artifact.ArtifactSink
 import io.github.ncorror.nekoflash.core.artifact.ArtifactSource
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
@@ -363,6 +364,21 @@ public class AdbLinkController(
             val shown = mutableState.value
             if (shown !is AdbLinkState.Connected || sideloads.active) return
             sideloads.start(live, shown.peerMode, sizeBytes)
+        }
+
+        /**
+         * Отдаёт Recovery пакет, выбранный пользователем.
+         *
+         * [stagingDirectory] — куда класть копию, если источник читается только
+         * подряд. Каталог приходит снаружи: у контроллера `Context` нет, и
+         * заводить его здесь ради одного пути значило бы протащить Android в
+         * слой, который без него обходится.
+         */
+        public fun sideloadFrom(stagingDirectory: File, origin: () -> ArtifactSource) {
+            val live = connection ?: return
+            val shown = mutableState.value
+            if (shown !is AdbLinkState.Connected || sideloads.active) return
+            sideloads.startFrom(live, shown.peerMode, stagingDirectory, origin)
         }
 
         /** Просит отменить передачу. После границы мутации сессия откажет. */

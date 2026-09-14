@@ -1,5 +1,13 @@
 package io.github.ncorror.nekoflash.adb
 
+import io.github.ncorror.nekoflash.artifact.ArtifactStagingOutcome
+import io.github.ncorror.nekoflash.artifact.StagedArtifactSource
+import io.github.ncorror.nekoflash.core.artifact.ArtifactRandomAccess
+import io.github.ncorror.nekoflash.core.artifact.ArtifactSource
+import io.github.ncorror.nekoflash.core.artifact.ArtifactStability
+import io.github.ncorror.nekoflash.core.artifact.ArtifactStaging
+import io.github.ncorror.nekoflash.core.artifact.ArtifactStagingDecision
+import io.github.ncorror.nekoflash.core.artifact.ArtifactStamps
 import io.github.ncorror.nekoflash.core.diagnostics.DiagnosticSink
 import io.github.ncorror.nekoflash.payload.GeneratedPayload
 import io.github.ncorror.nekoflash.protocol.adb.AdbConnection
@@ -10,6 +18,7 @@ import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadListener
 import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadOutcome
 import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadProgress
 import io.github.ncorror.nekoflash.protocol.adb.AdbSideloadSource
+import java.io.File
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +42,24 @@ public sealed interface AdbSideloadState {
         val progress: AdbSideloadProgress,
         val cancellable: Boolean,
     ) : AdbSideloadState
+
+    /**
+     * Пакет копируется в каталог приложения, прежде чем уйти на устройство.
+     *
+     * Отдельное состояние от передачи, а не её первые проценты: устройство в
+     * это время не тронуто вовсе, и мешать эти две вещи значило бы показывать
+     * прогресс мутации там, где мутации ещё нет.
+     */
+    public data class Staging(val bytes: Long, val name: String) : AdbSideloadState
+
+    /**
+     * Начать нельзя, и причина названа **до** первого байта.
+     *
+     * Сюда попадает всё, что выяснилось до передачи: подменённый источник,
+     * нехватка места, источник, который нельзя ни читать по кусочкам, ни
+     * скопировать.
+     */
+    public data class Refused(val detail: String) : AdbSideloadState
 
     /**
      * Передача кончилась.
@@ -101,11 +128,124 @@ public class AdbSideloadController(
         cancelling.set(true)
     }
 
+    /**
+     * Отдаёт Recovery пакет, **выбранный пользователем**.
+     *
+     * Три вещи выясняются до первого байта и в этом порядке: не подменили ли
+     * файл, хватит ли места, и умеет ли источник отдавать блоки в том порядке,
+     * в каком их просит Recovery. Последнее — не формальность: Sideload
+     * управляется запросами, и источник, читаемый только подряд, на повторный
+     * запрос отдал бы следующий кусок.
+     */
+    public fun startFrom(
+        connection: AdbConnection,
+        peerMode: AdbPeerMode,
+        stagingDirectory: File,
+        origin: () -> ArtifactSource,
+    ) {
+        if (running) return
+        running = true
+        cancelling.set(false)
+        mutableState.value = AdbSideloadState.Staging(0L, "")
+        executor.execute { prepare(connection, peerMode, stagingDirectory, origin) }
+    }
+
+    private fun prepare(
+        connection: AdbConnection,
+        peerMode: AdbPeerMode,
+        stagingDirectory: File,
+        origin: () -> ArtifactSource,
+    ) {
+        val prepared = runCatching { ready(origin(), stagingDirectory) }.getOrElse { error ->
+            Ready.No("источник не открылся: ${error.message ?: error.javaClass.simpleName}")
+        }
+        when (prepared) {
+            is Ready.No -> {
+                mutableState.value = AdbSideloadState.Refused(prepared.detail)
+                running = false
+            }
+
+            is Ready.Yes -> try {
+                transfer(connection, peerMode, prepared.size, prepared.access)
+            } finally {
+                prepared.release()
+            }
+        }
+    }
+
+    /**
+     * Готовит источник к передаче или объясняет, почему её не будет.
+     *
+     * Проверка на подмену идёт первой: если файл уже не тот, остальное неважно.
+     */
+    private fun ready(source: ArtifactSource, stagingDirectory: File): Ready {
+        val stability = ArtifactStamps.compare(source.openedStamp, source.stamp())
+        if (stability is ArtifactStability.Changed) {
+            return Ready.No("выбранный файл изменился с момента выбора: ${stability.detail}")
+        }
+        val decision = ArtifactStaging.decide(
+            access = source.identity.access,
+            sizeBytes = source.identity.sizeBytes,
+            randomAccessRequired = true,
+            // Объём Sideload объявляет в самом имени сервиса, то есть обязан
+            // знать его до первого байта.
+            sizeRequiredUpFront = true,
+            bytesAvailable = stagingDirectory.usableSpace,
+        )
+        return when (decision) {
+            is ArtifactStagingDecision.NoRoom -> Ready.No(
+                "для копии нужно ${decision.bytesNeeded} байт, свободно ${decision.bytesAvailable}",
+            )
+
+            is ArtifactStagingDecision.NotNeeded -> direct(source)
+            is ArtifactStagingDecision.Required -> staged(source, stagingDirectory)
+        }
+    }
+
+    private fun direct(source: ArtifactSource): Ready {
+        val access = source.randomAccess()
+        val size = source.identity.sizeBytes
+        return if (access == null || size == null) {
+            Ready.No("источник не отдаёт блоки в произвольном порядке, а скопировать его не удалось")
+        } else {
+            Ready.Yes(size, access) {}
+        }
+    }
+
+    private fun staged(source: ArtifactSource, stagingDirectory: File): Ready {
+        mutableState.value = AdbSideloadState.Staging(0L, source.identity.name)
+        val outcome = StagedArtifactSource.stage(source, stagingDirectory) { bytes ->
+            mutableState.value = AdbSideloadState.Staging(bytes, source.identity.name)
+        }
+        return when (outcome) {
+            is ArtifactStagingOutcome.Failed -> Ready.No(outcome.detail)
+            is ArtifactStagingOutcome.Staged -> Ready.Yes(
+                size = outcome.source.identity.sizeBytes ?: 0L,
+                access = outcome.source.randomAccess(),
+                release = outcome.source::close,
+            )
+        }
+    }
+
     private fun transfer(connection: AdbConnection, peerMode: AdbPeerMode, sizeBytes: Long) {
         val payload = GeneratedPayload(sizeBytes)
+        transfer(
+            connection = connection,
+            peerMode = peerMode,
+            sizeBytes = sizeBytes,
+            access = { offset, length -> payload.read(offset, length) },
+        )
+    }
+
+    private fun transfer(
+        connection: AdbConnection,
+        peerMode: AdbPeerMode,
+        sizeBytes: Long,
+        access: ArtifactRandomAccess,
+    ) {
         val outcome = runCatching {
             connection.sideloadDriver(diagnostics).send(
-                source = AdbSideloadSource { offset, length -> payload.read(offset, length) },
+                source = AdbSideloadSource { offset, length -> access.read(offset, length) },
                 totalBytes = sizeBytes,
                 transportConnected = true,
                 peerIsSideload = peerMode == AdbPeerMode.SIDELOAD,
@@ -123,6 +263,18 @@ public class AdbSideloadController(
             verificationPending = AdbSideloadContract.requiresVerification(outcome),
         )
         running = false
+    }
+
+    /** Готов источник к передаче или нет. */
+    private sealed interface Ready {
+        data class Yes(
+            val size: Long,
+            val access: ArtifactRandomAccess,
+            /** Убрать временную копию, если она заводилась. */
+            val release: () -> Unit,
+        ) : Ready
+
+        data class No(val detail: String) : Ready
     }
 
     /** Переносит события передачи в состояние экрана. */

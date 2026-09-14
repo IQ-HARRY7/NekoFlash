@@ -125,13 +125,28 @@ private fun rawServicePanel(adbLink: AdbLinkController): RawServicePanel = RawSe
     onCall = adbLink::callRawService,
 )
 
-/** То же для передачи пакета в Recovery. */
+/**
+ * То же для передачи пакета в Recovery — и выбор пакета через системный диалог.
+ *
+ * Копия непрозрачного источника кладётся в кэш приложения: она не переживает
+ * операцию намеренно, и система вправе убрать её сама, если места станет мало.
+ */
 @Composable
-private fun sideloadPanel(adbLink: AdbLinkController): SideloadPanel = SideloadPanel(
-    state = adbLink.sideload.collectAsState().value,
-    onSend = adbLink.recovery::sideload,
-    onCancel = adbLink.recovery::cancelSideload,
-)
+private fun sideloadPanel(adbLink: AdbLinkController): SideloadPanel {
+    val context = LocalContext.current
+    val resolver = context.contentResolver
+    val chooser = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { chosen ->
+        if (chosen != null) {
+            adbLink.recovery.sideloadFrom(context.cacheDir) { SafArtifactSource(resolver, chosen) }
+        }
+    }
+    return SideloadPanel(
+        state = adbLink.sideload.collectAsState().value,
+        onSend = adbLink.recovery::sideload,
+        onChoose = { chooser.launch(arrayOf("application/zip", "*/*")) },
+        onCancel = adbLink.recovery::cancelSideload,
+    )
+}
 
 /** То же для пробросов портов. */
 @Composable
@@ -198,17 +213,44 @@ private fun fastbootPanel(
     onPlan = link::runPlan,
 )
 
+@Composable
 private fun fastbootConsolePanel(
     link: FastbootLinkController,
     state: FastbootConsoleState,
-): FastbootConsolePanel = FastbootConsolePanel(
-    state = state,
-    onCommand = link::runCommand,
-    onVariable = link::readVariable,
-    onAllVariables = link::readAllVariables,
-    onDownload = link::downloadGenerated,
-    onFetch = link::fetchPartition,
-)
+): FastbootConsolePanel {
+    val resolver = LocalContext.current.contentResolver
+    val pendingFetch = remember { mutableStateOf<String?>(null) }
+
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { destination ->
+        val partition = pendingFetch.value
+        pendingFetch.value = null
+        if (destination != null && partition != null) {
+            link.fetchPartitionTo(partition) { SafArtifactSink(resolver, destination, partition) }
+        }
+    }
+
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { chosen ->
+        if (chosen != null) {
+            link.downloadFrom { SafArtifactSource(resolver, chosen) }
+        }
+    }
+
+    return FastbootConsolePanel(
+        state = state,
+        onCommand = link::runCommand,
+        onVariable = link::readVariable,
+        onAllVariables = link::readAllVariables,
+        onDownload = link::downloadGenerated,
+        onFetch = link::fetchPartition,
+        onFetchToFile = { partition ->
+            pendingFetch.value = partition
+            saveLauncher.launch(partition.ifBlank { "partition" } + ".img")
+        },
+        onDownloadFile = { openLauncher.launch(arrayOf("*/*")) },
+    )
+}
 
 /**
  * Проводка файловых действий, включая два, которым нужен системный диалог.

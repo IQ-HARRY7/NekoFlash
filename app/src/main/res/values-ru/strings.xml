@@ -269,4 +269,10 @@
     <string name="files_save_left_behind">На выбранном месте остался недописанный файл — удалите его сами: он выглядит целым, но целым не является.</string>
     <string name="files_save_removed">Недописанный файл с выбранного места убран.</string>
     <string name="files_source_changed">Выбранный файл изменился с момента выбора: %1$s. Выберите его заново.</string>
+    <string name="sideload_choose">Отдать выбранный пакет…</string>
+    <string name="sideload_staging">Копирую %2$s в приложение, чтобы блоки читались в любом порядке: пока %1$d байт. Устройство не тронуто.</string>
+    <string name="sideload_staging_note">Recovery просит блоки в своём порядке и вправе попросить один и тот же дважды, поэтому файл, читаемый только подряд, сперва копируется. Во время копирования на устройство не уходит ничего.</string>
+    <string name="sideload_refused">Ничего не отправлено: %1$s</string>
+    <string name="fastboot_fetch_to_file">Прочитать раздел в файл…</string>
+    <string name="fastboot_download_file">Загрузить выбранный файл…</string>
 </resources>

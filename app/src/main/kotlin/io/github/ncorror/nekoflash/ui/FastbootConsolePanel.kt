@@ -34,6 +34,10 @@ data class FastbootConsolePanel(
     val onDownload: (Long) -> Unit = {},
     /** Прочитать раздел с устройства — фаза DATA IN. Ничего не меняет. */
     val onFetch: (String) -> Unit = {},
+    /** Прочитать раздел в файл, который выберет пользователь. */
+    val onFetchToFile: (String) -> Unit = {},
+    /** Загрузить в буфер устройства файл, который выберет пользователь. */
+    val onDownloadFile: () -> Unit = {},
 )
 
 /**
@@ -128,6 +132,9 @@ private fun FastbootReadControls(console: FastbootConsolePanel) {
     Button(onClick = { console.onFetch(partition) }) {
         Text(stringResource(R.string.fastboot_fetch_read))
     }
+    Button(onClick = { console.onFetchToFile(partition) }) {
+        Text(stringResource(R.string.fastboot_fetch_to_file))
+    }
 
     Text(
         text = stringResource(R.string.fastboot_download_title),
@@ -140,6 +147,9 @@ private fun FastbootReadControls(console: FastbootConsolePanel) {
         Button(onClick = { console.onDownload(LARGE_DOWNLOAD_BYTES) }) {
             Text(stringResource(R.string.fastboot_download_large))
         }
+    }
+    Button(onClick = console.onDownloadFile) {
+        Text(stringResource(R.string.fastboot_download_file))
     }
 }
 
