@@ -310,4 +310,8 @@
     <string name="action_fastboot_getvar_all">Fastboot: спросить все переменные</string>
     <string name="action_fastboot_reboot_bootloader">Fastboot: перезагрузить в загрузчик</string>
     <string name="action_fastboot_reboot_fastbootd">Fastboot: перезагрузить в fastbootd</string>
+    <string name="welcome_capabilities">ADB · Fastboot · Recovery · Mi Unlock</string>
+    <string name="welcome_usb_title">Как телефон видит ваше устройство</string>
+    <string name="welcome_usb_body">Android отдаёт USB-устройство одному приложению за раз и только после вашего разрешения. Поэтому NekoFlash сперва спрашивает у системы, что подключено, потом у вас — разрешение, и дальше удерживает интерфейс, пока вы его не отпустите. Если список остался пустым, значит система не отдаёт устройство ни одному приложению: это говорит телефон, а не NekoFlash отказывает.</string>
+    <string name="welcome_continue">Продолжить</string>
 </resources>

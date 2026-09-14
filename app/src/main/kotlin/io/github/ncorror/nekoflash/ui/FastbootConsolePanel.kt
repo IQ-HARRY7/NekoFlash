@@ -59,9 +59,8 @@ fun FastbootConsoleSection(
         modifier = modifier.fillMaxWidth().padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
+        SectionHeading(
             text = stringResource(R.string.fastboot_console_title),
-            style = MaterialTheme.typography.titleSmall,
         )
 
         OutlinedTextField(
@@ -136,9 +135,8 @@ private fun FastbootReadControls(console: FastbootConsolePanel) {
         Text(stringResource(R.string.fastboot_fetch_to_file))
     }
 
-    Text(
+    SectionHeading(
         text = stringResource(R.string.fastboot_download_title),
-        style = MaterialTheme.typography.titleSmall,
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = { console.onDownload(SMALL_DOWNLOAD_BYTES) }) {

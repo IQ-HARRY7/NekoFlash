@@ -14,6 +14,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -35,12 +36,14 @@ import io.github.ncorror.nekoflash.usb.api.UsbSession
 import io.github.ncorror.nekoflash.artifact.SafArtifactSink
 import io.github.ncorror.nekoflash.artifact.SafArtifactSource
 import io.github.ncorror.nekoflash.ui.FileActions
+import io.github.ncorror.nekoflash.ui.FirstRun
 import io.github.ncorror.nekoflash.ui.ForwardPanel
 import io.github.ncorror.nekoflash.ui.RawServicePanel
 import io.github.ncorror.nekoflash.ui.RebootPanel
 import io.github.ncorror.nekoflash.ui.ReversePanel
 import io.github.ncorror.nekoflash.ui.SideloadPanel
 import io.github.ncorror.nekoflash.ui.TerminalActions
+import io.github.ncorror.nekoflash.ui.WelcomeScreen
 import io.github.ncorror.nekoflash.ui.theme.NekoFlashTheme
 import io.github.ncorror.nekoflash.usb.api.UsbClaimResult
 import io.github.ncorror.nekoflash.usb.api.UsbSessionCoordinator
@@ -60,7 +63,25 @@ class MainActivity : ComponentActivity() {
         val adbLink = application.adbLink
         val fastbootLink = application.fastbootLink
 
-        setContent { NekoFlashScreen(application, coordinator, adbLink, fastbootLink) }
+        setContent {
+            val firstRun = remember { FirstRun(this) }
+            var welcomeSeen by rememberSaveable { mutableStateOf(firstRun.seen) }
+            NekoFlashTheme {
+                // Вводный экран показывается один раз и ничего не решает: это
+                // «понял, дальше», а не согласие с условиями. Права быть
+                // профессионалом он не выдаёт — оно уже есть (`01` §3).
+                if (welcomeSeen) {
+                    NekoFlashScreen(application, coordinator, adbLink, fastbootLink)
+                } else {
+                    WelcomeScreen(
+                        onContinue = {
+                            firstRun.seen = true
+                            welcomeSeen = true
+                        },
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -113,42 +134,40 @@ class MainActivity : ComponentActivity() {
         // соседний: устройство подключили при свёрнутом приложении.
         RescanOnResume(coordinator)
 
-        NekoFlashTheme {
-            NekoFlashApp(
-                sessions = sessions,
-                scan = scan,
-                usbHostSupported = packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST),
-                exportStatus = exportStatus,
-                adbLink = linkState,
-                adbCommand = commandState,
-                terminal = terminalState,
-                terminalActions = terminalActions(adbLink),
-                files = fileState,
-                fileActions = fileActions(adbLink),
-                onRescanUsb = { coordinator.scanAttachedDevices() },
-                onClaim = claimAction(coordinator, claimFailedTemplate) { exportStatus = it },
-                onRelease = { session -> coordinator.release(session.generation) },
-                onAdbConnect = { session -> adbLink.connect(session.generation) },
-                onAdbDisconnect = { session -> adbLink.disconnect(session.generation) },
-                onRunCommand = adbLink::runCommand,
-                reboot = rebootPanel(adbLink),
-                rawService = rawServicePanel(adbLink),
-                forward = forwardPanel(adbLink),
-                reverse = reversePanel(adbLink),
-                sideload = sideloadPanel(adbLink),
-                operations = operationsPanel(application),
-                paletteActions = paletteActions(
-                    adbLink = adbLink,
-                    fastbootLink = fastbootLink,
-                    coordinator = coordinator,
-                    onExport = saveLauncher::launch,
-                    application = application,
-                ),
-                fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
-                fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
-                onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },
-            )
-        }
+        NekoFlashApp(
+            sessions = sessions,
+            scan = scan,
+            usbHostSupported = packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST),
+            exportStatus = exportStatus,
+            adbLink = linkState,
+            adbCommand = commandState,
+            terminal = terminalState,
+            terminalActions = terminalActions(adbLink),
+            files = fileState,
+            fileActions = fileActions(adbLink),
+            onRescanUsb = { coordinator.scanAttachedDevices() },
+            onClaim = claimAction(coordinator, claimFailedTemplate) { exportStatus = it },
+            onRelease = { session -> coordinator.release(session.generation) },
+            onAdbConnect = { session -> adbLink.connect(session.generation) },
+            onAdbDisconnect = { session -> adbLink.disconnect(session.generation) },
+            onRunCommand = adbLink::runCommand,
+            reboot = rebootPanel(adbLink),
+            rawService = rawServicePanel(adbLink),
+            forward = forwardPanel(adbLink),
+            reverse = reversePanel(adbLink),
+            sideload = sideloadPanel(adbLink),
+            operations = operationsPanel(application),
+            paletteActions = paletteActions(
+                adbLink = adbLink,
+                fastbootLink = fastbootLink,
+                coordinator = coordinator,
+                onExport = saveLauncher::launch,
+                application = application,
+            ),
+            fastboot = fastbootPanel(fastbootLink, fastbootState, sessions),
+            fastbootConsole = fastbootConsolePanel(fastbootLink, fastbootConsole),
+            onExportDiagnostics = { saveLauncher.launch(application.suggestedDiagnosticsFileName()) },
+        )
     }
 }
 

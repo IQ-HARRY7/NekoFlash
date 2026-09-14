@@ -32,9 +32,8 @@ data class OperationsPanel(
 internal fun OperationsSection(panel: OperationsPanel) {
     if (panel.live.isEmpty() && panel.history.isEmpty()) return
 
-    Text(
+    SectionHeading(
         text = stringResource(R.string.operations_title),
-        style = MaterialTheme.typography.titleSmall,
     )
     panel.live.forEach { record -> OperationRow(record, live = true) }
     panel.history.forEach { record -> OperationRow(record, live = false) }

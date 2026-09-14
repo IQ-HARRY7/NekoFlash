@@ -214,7 +214,7 @@ private fun Workspace(
     ) {
         when (destination) {
             WorkspaceDestination.DEVICE -> {
-                Text(
+                SectionHeading(
                     text = stringResource(R.string.sessions_title),
                     style = MaterialTheme.typography.headlineMedium,
                 )
@@ -270,7 +270,7 @@ private fun TerminalWorkspace(
     terminal: AdbTerminalState,
     actions: TerminalActions,
 ) {
-    Text(
+    SectionHeading(
         text = stringResource(R.string.nav_terminal),
         style = MaterialTheme.typography.headlineMedium,
     )
@@ -293,7 +293,7 @@ private fun DiagnosticsWorkspace(
     onRescanUsb: () -> Unit,
     onExportDiagnostics: () -> Unit,
 ) {
-    Text(
+    SectionHeading(
         text = stringResource(R.string.nav_diagnostics),
         style = MaterialTheme.typography.headlineMedium,
     )
